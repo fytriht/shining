@@ -1,0 +1,24 @@
+{
+  "configurations": [
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:shining}",
+      "name": "Debug Shining",
+      "target": "Shining",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug Shining"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:shining}",
+      "name": "Release Shining",
+      "target": "Shining",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release Shining"
+    }
+  ]
+}

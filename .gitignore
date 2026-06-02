@@ -1,4 +1,7 @@
 .build/
+.cache/
+.home/
+.tmp/
 dist/
 .DS_Store
 DerivedData/

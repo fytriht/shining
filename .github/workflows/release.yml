@@ -1,0 +1,216 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version to build, without leading v"
+        required: true
+        default: "0.0.0"
+      publish:
+        description: "Publish a GitHub Release"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build, notarize, and publish
+    runs-on: macos-14
+    timeout-minutes: 45
+
+    env:
+      APP_NAME: Shining
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swift --version
+
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_version_pattern='^[0-9]+[.][0-9]+[.][0-9]+(-(beta|rc)[.][0-9]+)?$'
+
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            tag="${GITHUB_REF_NAME}"
+            release_version="${tag#v}"
+            if [[ ! "$release_version" =~ $release_version_pattern ]]; then
+              echo "error: release tags must match vX.Y.Z, vX.Y.Z-beta.N, or vX.Y.Z-rc.N; got: $tag" >&2
+              exit 1
+            fi
+            publish="true"
+          else
+            release_version="${{ inputs.version }}"
+            if [[ ! "$release_version" =~ $release_version_pattern ]]; then
+              echo "error: workflow_dispatch version must match X.Y.Z, X.Y.Z-beta.N, or X.Y.Z-rc.N; got: $release_version" >&2
+              exit 1
+            fi
+            tag="v${release_version}"
+            publish="${{ inputs.publish }}"
+          fi
+
+          app_version="${release_version%%-*}"
+          prerelease="false"
+          if [[ "$release_version" == *"-"* ]]; then
+            prerelease="true"
+          fi
+
+          echo "release_version=$release_version" >> "$GITHUB_OUTPUT"
+          echo "app_version=$app_version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+
+      - name: Run tests
+        shell: bash
+        run: swift test
+
+      - name: Import Developer ID certificate
+        env:
+          APPLE_DEVELOPER_ID_CERTIFICATE_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 }}
+          APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          : "${APPLE_TEAM_ID:?APPLE_TEAM_ID secret is required}"
+          : "${APPLE_DEVELOPER_ID_CERTIFICATE_BASE64:?APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 secret is required}"
+          : "${APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD:?APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD secret is required}"
+          : "${APPLE_KEYCHAIN_PASSWORD:?APPLE_KEYCHAIN_PASSWORD secret is required}"
+
+          cert_path="$RUNNER_TEMP/developer-id.p12"
+          keychain_path="$RUNNER_TEMP/shining-release.keychain-db"
+
+          printf '%s' "$APPLE_DEVELOPER_ID_CERTIFICATE_BASE64" | base64 -D > "$cert_path"
+
+          security create-keychain -p "$APPLE_KEYCHAIN_PASSWORD" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$APPLE_KEYCHAIN_PASSWORD" "$keychain_path"
+          security default-keychain -s "$keychain_path"
+          security import "$cert_path" \
+            -P "$APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$keychain_path"
+          security list-keychain -d user -s "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$APPLE_KEYCHAIN_PASSWORD" "$keychain_path"
+
+          echo "Available code signing identities:"
+          security find-identity -v -p codesigning "$keychain_path"
+
+          identity="$(security find-identity -v -p codesigning "$keychain_path" | awk -F '"' '/Developer ID Application/ { print $2; exit }')"
+          if [[ -z "$identity" ]]; then
+            echo "error: no Developer ID Application identity with a private key was found in the imported .p12." >&2
+            echo "Export the .p12 from Keychain Access > My Certificates after installing the Apple-issued Developer ID Application certificate." >&2
+            exit 1
+          fi
+          if [[ "$identity" != *"($APPLE_TEAM_ID)"* ]]; then
+            echo "error: APPLE_TEAM_ID does not match the imported Developer ID Application certificate." >&2
+            echo "The imported identity is: $identity" >&2
+            echo "Set APPLE_TEAM_ID to the value in parentheses at the end of that identity." >&2
+            exit 1
+          fi
+
+          echo "SHINING_RELEASE_KEYCHAIN=$keychain_path" >> "$GITHUB_ENV"
+          echo "CODESIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+
+      - name: Build signed app
+        shell: bash
+        run: |
+          scripts/ci/build-release.sh \
+            --version "${{ steps.version.outputs.app_version }}" \
+            --build-number "${{ github.run_number }}"
+
+      - name: Prepare App Store Connect API key
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          : "${APP_STORE_CONNECT_API_KEY_ID:?APP_STORE_CONNECT_API_KEY_ID secret is required}"
+          : "${APP_STORE_CONNECT_API_KEY_P8:?APP_STORE_CONNECT_API_KEY_P8 secret is required}"
+
+          key_path="$RUNNER_TEMP/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
+          printf '%s' "$APP_STORE_CONNECT_API_KEY_P8" > "$key_path"
+          chmod 600 "$key_path"
+          echo "APP_STORE_CONNECT_API_KEY_PATH=$key_path" >> "$GITHUB_ENV"
+
+      - name: Notarize and staple app
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+        shell: bash
+        run: |
+          scripts/ci/notarize.sh \
+            --app "dist/release/Shining.app" \
+            --version "${{ steps.version.outputs.release_version }}"
+
+      - name: Verify notarized app
+        shell: bash
+        run: |
+          scripts/ci/verify-release.sh \
+            --app "dist/release/Shining.app" \
+            --version "${{ steps.version.outputs.app_version }}" \
+            --build-number "${{ github.run_number }}"
+
+      - name: Package release artifacts
+        shell: bash
+        run: |
+          scripts/ci/package-release.sh \
+            --app "dist/release/Shining.app" \
+            --version "${{ steps.version.outputs.release_version }}"
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: shining-${{ steps.version.outputs.release_version }}
+          if-no-files-found: error
+          path: |
+            dist/release/Shining-${{ steps.version.outputs.release_version }}.dmg
+            dist/release/Shining-${{ steps.version.outputs.release_version }}.zip
+            dist/release/Shining-${{ steps.version.outputs.release_version }}.sha256
+
+      - name: Publish GitHub Release
+        if: steps.version.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          args=()
+          if [[ "${{ steps.version.outputs.prerelease }}" == "true" ]]; then
+            args+=(--prerelease)
+          fi
+
+          gh release create "${{ steps.version.outputs.tag }}" \
+            "dist/release/Shining-${{ steps.version.outputs.release_version }}.dmg" \
+            "dist/release/Shining-${{ steps.version.outputs.release_version }}.zip" \
+            "dist/release/Shining-${{ steps.version.outputs.release_version }}.sha256" \
+            --title "Shining ${{ steps.version.outputs.release_version }}" \
+            --generate-notes \
+            --target "$GITHUB_SHA" \
+            "${args[@]}"
+
+      - name: Delete temporary keychain
+        if: always() && env.SHINING_RELEASE_KEYCHAIN != ''
+        shell: bash
+        run: security delete-keychain "$SHINING_RELEASE_KEYCHAIN" || true
