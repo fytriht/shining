@@ -2,11 +2,11 @@
 
 Shining is a small macOS app for capturing ideas without breaking your workflow.
 
-Press `Command + Option + Enter`, type a quick thought, then save it with the button or `Command + Enter`. The capture window closes, and your note is appended to a local editable idea file.
+Press `Command + Option + Space`, type a quick thought, then save it with the button or `Command + Enter`. The capture window closes, and your note is appended to a local editable idea file.
 
 ## Features
 
-- Global hotkey: `Command + Option + Enter`
+- Global hotkey: `Command + Option + Space`
 - Fast 400 x 300 capture window
 - Multi-line text input
 - Save with `Command + Enter`

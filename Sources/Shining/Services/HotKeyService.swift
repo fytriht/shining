@@ -54,7 +54,7 @@ final class HotKeyService {
         )
 
         let hotKeyStatus = RegisterEventHotKey(
-            UInt32(kVK_Return),
+            UInt32(kVK_Space),
             UInt32(cmdKey | optionKey),
             hotKeyID,
             GetApplicationEventTarget(),
@@ -63,7 +63,7 @@ final class HotKeyService {
         )
 
         if hotKeyStatus != noErr {
-            NSLog("Failed to register Cmd+Option+Enter hot key: \(hotKeyStatus)")
+            NSLog("Failed to register Cmd+Option+Space hot key: \(hotKeyStatus)")
         }
     }
 
