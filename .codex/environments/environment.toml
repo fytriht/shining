@@ -6,6 +6,21 @@ name = "Shining"
 script = ""
 
 [[actions]]
-name = "Run"
+name = "Build Debug"
+icon = "hammer"
+command = "swift build"
+
+[[actions]]
+name = "Test"
+icon = "test"
+command = "swift test"
+
+[[actions]]
+name = "Run App"
 icon = "run"
 command = "./script/build_and_run.sh"
+
+[[actions]]
+name = "Verify Run"
+icon = "test"
+command = "./script/build_and_run.sh --verify"
