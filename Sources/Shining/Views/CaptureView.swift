@@ -1,19 +1,30 @@
+import ShiningCore
 import SwiftUI
 
+final class CaptureFocusController: ObservableObject {
+    @Published private(set) var requestID = 0
+
+    func requestFocus() {
+        requestID += 1
+    }
+}
+
 struct CaptureView: View {
+    @ObservedObject var draftStore: CaptureDraftStore
+    @ObservedObject var focusController: CaptureFocusController
+
     let onSave: (String) -> Void
 
     @FocusState private var isEditorFocused: Bool
-    @State private var draft = ""
 
     private var canSave: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !draftStore.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
         VStack(spacing: 10) {
             ZStack(alignment: .topLeading) {
-                TextEditor(text: $draft)
+                TextEditor(text: $draftStore.text)
                     .font(.body)
                     .focused($isEditorFocused)
                     .scrollContentBackground(.hidden)
@@ -21,7 +32,7 @@ struct CaptureView: View {
                     .background(.regularMaterial)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
 
-                if draft.isEmpty {
+                if draftStore.text.isEmpty {
                     Text("记录一个想法...")
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 13)
@@ -42,7 +53,10 @@ struct CaptureView: View {
         .padding(14)
         .frame(width: 400, height: 300)
         .onAppear {
-            isEditorFocused = true
+            focusEditor()
+        }
+        .onChange(of: focusController.requestID) {
+            focusEditor()
         }
     }
 
@@ -51,6 +65,12 @@ struct CaptureView: View {
             return
         }
 
-        onSave(draft)
+        onSave(draftStore.text)
+    }
+
+    private func focusEditor() {
+        DispatchQueue.main.async {
+            isEditorFocused = true
+        }
     }
 }

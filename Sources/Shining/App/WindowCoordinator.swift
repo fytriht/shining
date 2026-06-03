@@ -4,13 +4,16 @@ import SwiftUI
 
 final class WindowCoordinator: NSObject, NSWindowDelegate {
     private let store: IdeaStore
+    private let draftStore: CaptureDraftStore
+    private let captureFocusController = CaptureFocusController()
     private var hotKeyService: HotKeyService?
-    private var captureWindow: NSWindow?
+    private var capturePanel: CapturePanel?
     private var mainWindow: NSWindow?
     private var dockIconIsVisible = false
 
-    init(store: IdeaStore) {
+    init(store: IdeaStore, draftStore: CaptureDraftStore = CaptureDraftStore()) {
         self.store = store
+        self.draftStore = draftStore
         super.init()
     }
 
@@ -28,33 +31,43 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
     }
 
     func showCaptureWindow() {
-        if let captureWindow {
+        if let capturePanel {
             NSApp.activate(ignoringOtherApps: true)
-            captureWindow.makeKeyAndOrderFront(nil)
+            capturePanel.centerOnCurrentScreen()
+            capturePanel.makeKeyAndOrderFront(nil)
+            captureFocusController.requestFocus()
             return
         }
 
-        let view = CaptureView { [weak self] capture in
+        let view = CaptureView(
+            draftStore: draftStore,
+            focusController: captureFocusController
+        ) { [weak self] capture in
             self?.saveCapture(capture)
         }
 
-        let window = NSWindow(
+        let panel = CapturePanel(
             contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
-            styleMask: [.titled, .closable, .miniaturizable],
+            styleMask: [.titled, .closable, .utilityWindow],
             backing: .buffered,
             defer: false
         )
-        window.title = "闪念"
-        window.contentViewController = NSHostingController(rootView: view)
-        window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 400, height: 300)
-        window.maxSize = NSSize(width: 400, height: 300)
-        window.delegate = self
-        window.center()
+        panel.title = "闪念"
+        panel.contentViewController = NSHostingController(rootView: view)
+        panel.isReleasedWhenClosed = false
+        panel.isFloatingPanel = true
+        panel.level = .floating
+        panel.hidesOnDeactivate = false
+        panel.collectionBehavior = [.moveToActiveSpace]
+        panel.minSize = NSSize(width: 400, height: 300)
+        panel.maxSize = NSSize(width: 400, height: 300)
+        panel.delegate = self
+        panel.centerOnCurrentScreen()
 
-        captureWindow = window
+        capturePanel = panel
         NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
+        panel.makeKeyAndOrderFront(nil)
+        captureFocusController.requestFocus()
     }
 
     func showMainWindow() {
@@ -73,20 +86,16 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
             window.isReleasedWhenClosed = false
             window.minSize = NSSize(width: 520, height: 360)
             window.delegate = self
-            window.center()
             mainWindow = window
         }
 
         NSApp.activate(ignoringOtherApps: true)
+        mainWindow?.centerOnCurrentScreen()
         mainWindow?.makeKeyAndOrderFront(nil)
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         if sender === mainWindow {
-            if store.hasContent, !confirmMainWindowHide() {
-                return false
-            }
-
             sender.orderOut(nil)
             return false
         }
@@ -99,8 +108,8 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
             return
         }
 
-        if window === captureWindow {
-            captureWindow = nil
+        if window === capturePanel {
+            capturePanel = nil
         }
     }
 
@@ -109,15 +118,16 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
             return
         }
 
+        draftStore.clear()
         ensureDockIconVisible()
         closeCaptureWindow()
     }
 
     private func closeCaptureWindow() {
-        captureWindow?.delegate = nil
-        captureWindow?.orderOut(nil)
-        captureWindow?.close()
-        captureWindow = nil
+        capturePanel?.delegate = nil
+        capturePanel?.orderOut(nil)
+        capturePanel?.close()
+        capturePanel = nil
     }
 
     private func ensureDockIconVisible() {
@@ -129,13 +139,33 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
         dockIconIsVisible = true
     }
 
-    private func confirmMainWindowHide() -> Bool {
-        let alert = NSAlert()
-        alert.messageText = "隐藏 Shining？"
-        alert.informativeText = "窗口会隐藏，内容仍会保存在本机。"
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "隐藏")
-        alert.addButton(withTitle: "取消")
-        return alert.runModal() == .alertFirstButtonReturn
+}
+
+private final class CapturePanel: NSPanel {
+    override var canBecomeKey: Bool {
+        true
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+        // Do not close the capture panel on Escape.
+    }
+}
+
+private extension NSWindow {
+    func centerOnCurrentScreen() {
+        let screen = NSScreen.screens.first { screen in
+            screen.frame.contains(NSEvent.mouseLocation)
+        } ?? NSScreen.main
+
+        guard let visibleFrame = screen?.visibleFrame else {
+            center()
+            return
+        }
+
+        let origin = NSPoint(
+            x: visibleFrame.midX - frame.width / 2,
+            y: visibleFrame.midY - frame.height / 2
+        )
+        setFrameOrigin(origin)
     }
 }
