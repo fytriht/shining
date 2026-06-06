@@ -11,7 +11,6 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
     private var hotKeyService: HotKeyService?
     private var capturePanel: CapturePanel?
     private var mainWindow: NSWindow?
-    private var dockIconIsVisible = false
 
     init(store: IdeaStore, draftStore: CaptureDraftStore = CaptureDraftStore()) {
         self.store = store
@@ -73,8 +72,6 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
     }
 
     func showMainWindow() {
-        ensureDockIconVisible()
-
         if mainWindow == nil {
             let view = MainEditorView(store: store)
             let window = NSWindow(
@@ -121,7 +118,6 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
         }
 
         draftStore.clear()
-        ensureDockIconVisible()
         closeCaptureWindow()
     }
 
@@ -131,16 +127,6 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
         capturePanel?.close()
         capturePanel = nil
     }
-
-    private func ensureDockIconVisible() {
-        guard !dockIconIsVisible else {
-            return
-        }
-
-        NSApp.setActivationPolicy(.regular)
-        dockIconIsVisible = true
-    }
-
 }
 
 private final class CapturePanel: NSPanel {
