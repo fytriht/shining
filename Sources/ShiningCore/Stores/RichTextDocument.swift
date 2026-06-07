@@ -54,8 +54,25 @@ public enum RichTextDocument {
         }
 
         return findTimestampLines(in: document)
-            .first { $0.lineRange.endLocation == location }?
+            .first { $0.contentRange.endLocation == location }?
             .lineRange
+    }
+
+    public static func timestampLineEndLocationForBackwardDelete(
+        at location: Int,
+        in document: NSAttributedString
+    ) -> Int? {
+        guard location >= 0, location <= document.length else {
+            return nil
+        }
+
+        return findTimestampLines(in: document)
+            .first {
+                $0.lineRange.endLocation == location &&
+                    $0.contentRange.endLocation < $0.lineRange.endLocation
+            }?
+            .contentRange
+            .endLocation
     }
 
     public static func timestampLineDeletionRangeForForwardDelete(

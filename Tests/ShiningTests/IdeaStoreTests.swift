@@ -489,7 +489,7 @@ final class IdeaStoreTests: XCTestCase {
         let document = NSAttributedString(string: "\(timestamp)\n\nbody")
         let deletionRange = try XCTUnwrap(
             RichTextDocument.timestampLineDeletionRangeForBackwardDelete(
-                at: timestamp.utf16.count + 1,
+                at: timestamp.utf16.count,
                 in: document
             )
         )
@@ -498,6 +498,25 @@ final class IdeaStoreTests: XCTestCase {
         XCTAssertEqual(deletionRange.length, timestamp.utf16.count + 1)
         XCTAssertNil(
             RichTextDocument.timestampLineDeletionRangeForBackwardDelete(
+                at: timestamp.utf16.count + 1,
+                in: document
+            )
+        )
+    }
+
+    func testTimestampLineEndLocationForBackwardDeleteFromNextLineStart() throws {
+        let timestamp = "# 2026-06-02 08:40"
+        let document = NSAttributedString(string: "\(timestamp)\n\nbody")
+
+        XCTAssertEqual(
+            RichTextDocument.timestampLineEndLocationForBackwardDelete(
+                at: timestamp.utf16.count + 1,
+                in: document
+            ),
+            timestamp.utf16.count
+        )
+        XCTAssertNil(
+            RichTextDocument.timestampLineEndLocationForBackwardDelete(
                 at: timestamp.utf16.count,
                 in: document
             )

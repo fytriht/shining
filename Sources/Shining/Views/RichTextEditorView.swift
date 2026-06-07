@@ -230,7 +230,7 @@ final class RichTextView: NSTextView {
 
     override func deleteBackward(_ sender: Any?) {
         guard selectedRange().length == 0,
-              deleteTimestampLineForBackwardDeleteIfNeeded() else {
+              handleTimestampLineBackwardDeleteIfNeeded() else {
             super.deleteBackward(sender)
             return
         }
@@ -316,20 +316,41 @@ final class RichTextView: NSTextView {
         constrainImageAttachmentsToTextWidth()
     }
 
-    private func deleteTimestampLineForBackwardDeleteIfNeeded() -> Bool {
+    private func handleTimestampLineBackwardDeleteIfNeeded() -> Bool {
         guard let textStorage else {
             return false
         }
 
         let document = NSAttributedString(attributedString: textStorage)
+        let location = selectedRange().location
         guard let deletionRange = RichTextDocument.timestampLineDeletionRangeForBackwardDelete(
-            at: selectedRange().location,
+            at: location,
+            in: document
+        ) else {
+            return moveToTimestampLineEndForBackwardDeleteIfNeeded(
+                at: location,
+                in: document
+            )
+        }
+
+        return deleteCharacters(in: deletionRange)
+    }
+
+    private func moveToTimestampLineEndForBackwardDeleteIfNeeded(
+        at location: Int,
+        in document: NSAttributedString
+    ) -> Bool {
+        guard let lineEndLocation = RichTextDocument.timestampLineEndLocationForBackwardDelete(
+            at: location,
             in: document
         ) else {
             return false
         }
 
-        return deleteCharacters(in: deletionRange)
+        let lineEndRange = NSRange(location: lineEndLocation, length: 0)
+        setSelectedRange(lineEndRange)
+        scrollRangeToVisible(lineEndRange)
+        return true
     }
 
     private func deleteTimestampLineForForwardDeleteIfNeeded() -> Bool {
