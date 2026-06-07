@@ -70,6 +70,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 520, height: 360)
         window.delegate = self
+        configureAlwaysOnTopBehavior(for: window)
 
         if !window.setFrameUsingName(Self.mainWindowFrameAutosaveName) {
             window.centerOnCurrentScreen()
@@ -78,6 +79,15 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
 
         mainWindow = window
         return window
+    }
+
+    private func configureAlwaysOnTopBehavior(for window: NSWindow) {
+        window.level = .floating
+
+        var collectionBehavior = window.collectionBehavior
+        collectionBehavior.insert(.moveToActiveSpace)
+        collectionBehavior.insert(.fullScreenAuxiliary)
+        window.collectionBehavior = collectionBehavior
     }
 
     private func saveMainWindowFrame() {
