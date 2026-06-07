@@ -13,26 +13,29 @@ struct CaptureView: View {
     @ObservedObject var draftStore: CaptureDraftStore
     @ObservedObject var focusController: CaptureFocusController
 
-    let onSave: (String) -> Void
-
-    @FocusState private var isEditorFocused: Bool
+    let onSave: (NSAttributedString) -> Void
+    @State private var focusRequest = 0
 
     private var canSave: Bool {
-        !draftStore.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        draftStore.hasContent
     }
 
     var body: some View {
         VStack(spacing: 10) {
             ZStack(alignment: .topLeading) {
-                TextEditor(text: $draftStore.text)
-                    .font(.body)
-                    .focused($isEditorFocused)
-                    .scrollContentBackground(.hidden)
+                RichTextEditorView(
+                    document: draftStore.document,
+                    revision: draftStore.revision,
+                    focusRequest: focusRequest,
+                    textContainerInset: NSSize(width: 6, height: 6)
+                ) { document in
+                    draftStore.replaceDocument(document)
+                }
                     .padding(6)
                     .background(.regularMaterial)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
 
-                if draftStore.text.isEmpty {
+                if !draftStore.hasContent {
                     Text("记录一个想法...")
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 13)
@@ -65,12 +68,12 @@ struct CaptureView: View {
             return
         }
 
-        onSave(draftStore.text)
+        onSave(draftStore.document)
     }
 
     private func focusEditor() {
         DispatchQueue.main.async {
-            isEditorFocused = true
+            focusRequest += 1
         }
     }
 }

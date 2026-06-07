@@ -1,20 +1,23 @@
+import AppKit
 import Combine
 import Foundation
 
 public final class IdeaStore: ObservableObject {
-    @Published public var text: String
+    @Published public private(set) var document: NSAttributedString
+    @Published public private(set) var revision = 0
 
     private let fileURL: URL
     private let timestampFormatter: DateFormatter
+    private var pendingSave: DispatchWorkItem?
 
     public init(fileURL: URL = IdeaStore.defaultFileURL()) {
         self.fileURL = fileURL
         self.timestampFormatter = IdeaStore.makeTimestampFormatter()
-        self.text = (try? String(contentsOf: fileURL, encoding: .utf8)) ?? ""
+        self.document = RichTextDocument.load(from: fileURL)
     }
 
     public var hasContent: Bool {
-        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        RichTextDocument.hasMeaningfulContent(document)
     }
 
     public static func defaultFileURL() -> URL {
@@ -25,36 +28,51 @@ public final class IdeaStore: ObservableObject {
 
         return baseURL
             .appendingPathComponent("Shining", isDirectory: true)
-            .appendingPathComponent("ideas.md", isDirectory: false)
+            .appendingPathComponent("ideas.rtfd", isDirectory: true)
     }
 
-    public func appendCapture(_ capture: String, date: Date = Date()) -> Bool {
+    public func replaceDocument(_ document: NSAttributedString) {
+        self.document = RichTextDocument.copy(document)
+        scheduleSave()
+    }
+
+    public func appendCapture(_ capture: NSAttributedString, date: Date = Date()) -> Bool {
+        guard RichTextDocument.hasMeaningfulContent(capture) else {
+            return false
+        }
+
         let timestamp = timestampFormatter.string(from: date)
-        let updatedText = IdeaTextAppender.append(
-            existing: text,
+        let updatedDocument = IdeaRichTextAppender.append(
+            existing: document,
             capture: capture,
             timestamp: timestamp
         )
 
-        guard updatedText != text else {
-            return false
-        }
-
-        text = updatedText
-        save()
+        document = updatedDocument
+        revision += 1
+        saveNow()
         return true
     }
 
-    public func save() {
+    public func saveNow() {
+        pendingSave?.cancel()
+        pendingSave = nil
+
         do {
-            try FileManager.default.createDirectory(
-                at: fileURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            try text.write(to: fileURL, atomically: true, encoding: .utf8)
+            try RichTextDocument.save(document, to: fileURL)
         } catch {
             assertionFailure("Failed to save ideas: \(error)")
         }
+    }
+
+    private func scheduleSave() {
+        pendingSave?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.saveNow()
+        }
+        pendingSave = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: workItem)
     }
 
     private static func makeTimestampFormatter() -> DateFormatter {

@@ -8,9 +8,9 @@ Press `Command + Option + Space`, type a quick thought, then save it with the bu
 
 - Global hotkey: `Command + Option + Space`
 - Fast 400 x 300 capture window
-- Multi-line text input
+- Rich text input with images
 - Save with `Command + Enter`
-- Ideas are appended with timestamps
+- Ideas are appended with timestamps and image attachments
 - Main editor window for reviewing and editing saved ideas
 - Local persistence in Application Support
 - Native macOS app icon
@@ -103,16 +103,17 @@ Shining-<version>.sha256
 Saved ideas are stored at:
 
 ```text
-~/Library/Application Support/Shining/ideas.md
+~/Library/Application Support/Shining/ideas.rtfd
 ```
 
-Each capture is appended like this:
+Capture drafts are stored at:
 
-```markdown
-## yyyy-MM-dd HH:mm
-
-Your idea
+```text
+~/Library/Application Support/Shining/capture-draft.rtfd
 ```
+
+Existing `ideas.md` and `capture-draft.txt` files are not automatically
+migrated.
 
 ## Project Structure
 

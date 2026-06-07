@@ -3,21 +3,21 @@ import SwiftUI
 
 struct MainEditorView: View {
     @ObservedObject var store: IdeaStore
-    @FocusState private var isEditorFocused: Bool
+    @State private var focusRequest = 0
 
     var body: some View {
-        TextEditor(text: $store.text)
-            .font(.body)
-            .focused($isEditorFocused)
-            .scrollContentBackground(.hidden)
+        RichTextEditorView(
+            document: store.document,
+            revision: store.revision,
+            focusRequest: focusRequest
+        ) { document in
+            store.replaceDocument(document)
+        }
             .padding(12)
             .frame(minWidth: 520, minHeight: 360)
             .background(Color(nsColor: .textBackgroundColor))
             .onAppear {
-                isEditorFocused = true
-            }
-            .onChange(of: store.text) {
-                store.save()
+                focusRequest += 1
             }
     }
 }

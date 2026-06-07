@@ -28,7 +28,8 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
 
     func stop() {
         hotKeyService?.unregister()
-        store.save()
+        store.saveNow()
+        draftStore.saveNow()
     }
 
     func showCaptureWindow() {
@@ -112,7 +113,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
         }
     }
 
-    private func saveCapture(_ capture: String) {
+    private func saveCapture(_ capture: NSAttributedString) {
         guard store.appendCapture(capture) else {
             return
         }
