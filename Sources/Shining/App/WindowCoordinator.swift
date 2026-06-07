@@ -59,7 +59,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
             store: store,
             focusController: editorFocusController
         )
-        let window = NSWindow(
+        let window = EscClosableWindow(
             contentRect: NSRect(x: 0, y: 0, width: 700, height: 520),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
@@ -92,6 +92,40 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
 
     private func saveMainWindowFrame() {
         mainWindow?.saveFrame(usingName: Self.mainWindowFrameAutosaveName)
+    }
+}
+
+private final class EscClosableWindow: NSWindow {
+    private static let escapeKeyCode: UInt16 = 53
+
+    override func sendEvent(_ event: NSEvent) {
+        if shouldPerformClose(for: event) {
+            performClose(nil)
+            return
+        }
+
+        super.sendEvent(event)
+    }
+
+    private func shouldPerformClose(for event: NSEvent) -> Bool {
+        guard event.type == .keyDown,
+              attachedSheet == nil,
+              NSApp.modalWindow == nil else {
+            return false
+        }
+
+        let closeModifiers: NSEvent.ModifierFlags = [
+            .command,
+            .control,
+            .option,
+            .shift
+        ]
+        guard event.modifierFlags.intersection(closeModifiers).isEmpty else {
+            return false
+        }
+
+        return event.keyCode == Self.escapeKeyCode ||
+            event.charactersIgnoringModifiers == "\u{1B}"
     }
 }
 
