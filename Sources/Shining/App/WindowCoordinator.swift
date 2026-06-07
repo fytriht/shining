@@ -3,6 +3,10 @@ import ShiningCore
 import SwiftUI
 
 final class WindowCoordinator: NSObject, NSWindowDelegate {
+    private static let mainWindowFrameAutosaveName = NSWindow.FrameAutosaveName(
+        "\(ShiningApp.bundleIdentifier).main-window"
+    )
+
     private let store: IdeaStore
     private let editorFocusController = EditorFocusController()
     private var hotKeyService: HotKeyService?
@@ -23,6 +27,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
 
     func stop() {
         hotKeyService?.unregister()
+        saveMainWindowFrame()
         store.saveNow()
     }
 
@@ -32,38 +37,51 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
     }
 
     func showMainWindow(focusRange: NSRange? = nil) {
-        if mainWindow == nil {
-            let view = MainEditorView(
-                store: store,
-                focusController: editorFocusController
-            )
-            let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 700, height: 520),
-                styleMask: [.titled, .closable, .miniaturizable, .resizable],
-                backing: .buffered,
-                defer: false
-            )
-            window.title = ShiningApp.name
-            window.contentViewController = NSHostingController(rootView: view)
-            window.isReleasedWhenClosed = false
-            window.minSize = NSSize(width: 520, height: 360)
-            window.delegate = self
-            mainWindow = window
-        }
+        let window = mainWindow ?? makeMainWindow()
 
         NSApp.activate(ignoringOtherApps: true)
-        mainWindow?.centerOnCurrentScreen()
-        mainWindow?.makeKeyAndOrderFront(nil)
+        window.makeKeyAndOrderFront(nil)
         editorFocusController.requestFocus(selectedRange: focusRange)
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         if sender === mainWindow {
+            saveMainWindowFrame()
             sender.orderOut(nil)
             return false
         }
 
         return true
+    }
+
+    private func makeMainWindow() -> NSWindow {
+        let view = MainEditorView(
+            store: store,
+            focusController: editorFocusController
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 700, height: 520),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = ShiningApp.name
+        window.contentViewController = NSHostingController(rootView: view)
+        window.isReleasedWhenClosed = false
+        window.minSize = NSSize(width: 520, height: 360)
+        window.delegate = self
+
+        if !window.setFrameUsingName(Self.mainWindowFrameAutosaveName) {
+            window.centerOnCurrentScreen()
+        }
+        window.setFrameAutosaveName(Self.mainWindowFrameAutosaveName)
+
+        mainWindow = window
+        return window
+    }
+
+    private func saveMainWindowFrame() {
+        mainWindow?.saveFrame(usingName: Self.mainWindowFrameAutosaveName)
     }
 }
 
