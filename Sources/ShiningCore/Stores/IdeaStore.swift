@@ -37,7 +37,30 @@ public final class IdeaStore: ObservableObject {
     }
 
     @discardableResult
+    public func cleanUpDocument(saveImmediately: Bool = false) -> Bool {
+        let cleanedDocument = RichTextDocument.cleaned(document)
+        guard !document.isEqual(to: cleanedDocument) else {
+            if saveImmediately {
+                saveNow()
+            }
+            return false
+        }
+
+        document = cleanedDocument
+        revision += 1
+
+        if saveImmediately {
+            saveNow()
+        } else {
+            scheduleSave()
+        }
+        return true
+    }
+
+    @discardableResult
     public func insertTimestamp(date: Date = Date()) -> NSRange {
+        cleanUpDocument()
+
         let timestamp = timestampFormatter.string(from: date)
         let insertion = IdeaTimestampInserter.insert(
             timestamp: timestamp,

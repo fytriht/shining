@@ -28,15 +28,23 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
     func stop() {
         hotKeyService?.unregister()
         saveMainWindowFrame()
+        store.cleanUpDocument(saveImmediately: false)
         store.saveNow()
     }
 
     func showEditorAndInsertTimestamp() {
         let cursorRange = store.insertTimestamp()
-        showMainWindow(focusRange: cursorRange)
+        showMainWindow(focusRange: cursorRange, cleanUpBeforeShowing: false)
     }
 
-    func showMainWindow(focusRange: NSRange? = nil) {
+    func showMainWindow(
+        focusRange: NSRange? = nil,
+        cleanUpBeforeShowing: Bool = true
+    ) {
+        if cleanUpBeforeShowing {
+            store.cleanUpDocument(saveImmediately: true)
+        }
+
         let window = mainWindow ?? makeMainWindow()
 
         NSApp.activate(ignoringOtherApps: true)
@@ -47,6 +55,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         if sender === mainWindow {
             saveMainWindowFrame()
+            store.cleanUpDocument(saveImmediately: true)
             sender.orderOut(nil)
             return false
         }
