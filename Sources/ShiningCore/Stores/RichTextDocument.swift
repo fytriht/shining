@@ -68,42 +68,48 @@ public enum RichTextDocument {
     }
 }
 
-public enum IdeaRichTextAppender {
-    public static func append(
-        existing: NSAttributedString,
-        capture: NSAttributedString,
-        timestamp: String
-    ) -> NSAttributedString {
-        guard RichTextDocument.hasMeaningfulContent(capture) else {
-            return RichTextDocument.copy(existing)
+public enum IdeaTimestampInserter {
+    public struct Insertion {
+        public let document: NSAttributedString
+        public let cursorRange: NSRange
+    }
+
+    public static func insert(
+        timestamp: String,
+        into existing: NSAttributedString
+    ) -> Insertion {
+        let result = NSMutableAttributedString()
+        let timestampBlock = timestampLine(timestamp)
+        result.append(timestampBlock)
+
+        let cursorRange = NSRange(location: timestampBlock.length, length: 0)
+
+        if RichTextDocument.hasMeaningfulContent(existing) {
+            result.append(bodyText("\n\n"))
+            result.append(RichTextDocument.copy(existing))
         }
 
-        let result = NSMutableAttributedString(attributedString: existing)
-        trimTrailingNewlines(in: result)
-
-        if RichTextDocument.hasMeaningfulContent(result) {
-            result.append(NSAttributedString(string: "\n\n"))
-        }
-
-        result.append(timestampLine(timestamp))
-        result.append(RichTextDocument.copy(capture))
-        trimTrailingNewlines(in: result)
-        return result
+        return Insertion(document: result, cursorRange: cursorRange)
     }
 
     private static func timestampLine(_ timestamp: String) -> NSAttributedString {
-        NSAttributedString(
-            string: "\(timestamp)\n\n",
+        let result = NSMutableAttributedString(
+            string: timestamp,
             attributes: [
                 .font: NSFont.boldSystemFont(ofSize: NSFont.systemFontSize)
             ]
         )
+        result.append(bodyText("\n\n"))
+        return result
     }
 
-    private static func trimTrailingNewlines(in document: NSMutableAttributedString) {
-        while let last = document.string.unicodeScalars.last,
-              CharacterSet.newlines.contains(last) {
-            document.deleteCharacters(in: NSRange(location: document.length - 1, length: 1))
-        }
+    private static func bodyText(_ string: String) -> NSAttributedString {
+        NSAttributedString(
+            string: string,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
+                .foregroundColor: NSColor.labelColor
+            ]
+        )
     }
 }

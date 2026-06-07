@@ -3,24 +3,19 @@ import ShiningCore
 import SwiftUI
 
 final class WindowCoordinator: NSObject, NSWindowDelegate {
-    private static let captureContentSize = NSSize(width: 400, height: 300)
-
     private let store: IdeaStore
-    private let draftStore: CaptureDraftStore
-    private let captureFocusController = CaptureFocusController()
+    private let editorFocusController = EditorFocusController()
     private var hotKeyService: HotKeyService?
-    private var capturePanel: CapturePanel?
     private var mainWindow: NSWindow?
 
-    init(store: IdeaStore, draftStore: CaptureDraftStore = CaptureDraftStore()) {
+    init(store: IdeaStore) {
         self.store = store
-        self.draftStore = draftStore
         super.init()
     }
 
     func start() {
         let hotKeyService = HotKeyService { [weak self] in
-            self?.showCaptureWindow()
+            self?.showEditorAndInsertTimestamp()
         }
         hotKeyService.register()
         self.hotKeyService = hotKeyService
@@ -29,52 +24,19 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
     func stop() {
         hotKeyService?.unregister()
         store.saveNow()
-        draftStore.saveNow()
     }
 
-    func showCaptureWindow() {
-        if let capturePanel {
-            NSApp.activate(ignoringOtherApps: true)
-            capturePanel.centerOnCurrentScreen()
-            capturePanel.makeKeyAndOrderFront(nil)
-            captureFocusController.requestFocus()
-            return
-        }
-
-        let view = CaptureView(
-            draftStore: draftStore,
-            focusController: captureFocusController
-        ) { [weak self] capture in
-            self?.saveCapture(capture)
-        }
-
-        let panel = CapturePanel(
-            contentRect: NSRect(origin: .zero, size: Self.captureContentSize),
-            styleMask: [.titled, .closable, .utilityWindow],
-            backing: .buffered,
-            defer: false
-        )
-        panel.title = "闪念"
-        panel.contentViewController = NSHostingController(rootView: view)
-        panel.isReleasedWhenClosed = false
-        panel.isFloatingPanel = true
-        panel.level = .floating
-        panel.hidesOnDeactivate = false
-        panel.collectionBehavior = [.moveToActiveSpace]
-        panel.contentMinSize = Self.captureContentSize
-        panel.contentMaxSize = Self.captureContentSize
-        panel.delegate = self
-        panel.centerOnCurrentScreen(contentSize: Self.captureContentSize)
-
-        capturePanel = panel
-        NSApp.activate(ignoringOtherApps: true)
-        panel.makeKeyAndOrderFront(nil)
-        captureFocusController.requestFocus()
+    func showEditorAndInsertTimestamp() {
+        let cursorRange = store.insertTimestamp()
+        showMainWindow(focusRange: cursorRange)
     }
 
-    func showMainWindow() {
+    func showMainWindow(focusRange: NSRange? = nil) {
         if mainWindow == nil {
-            let view = MainEditorView(store: store)
+            let view = MainEditorView(
+                store: store,
+                focusController: editorFocusController
+            )
             let window = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 700, height: 520),
                 styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -92,6 +54,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
         mainWindow?.centerOnCurrentScreen()
         mainWindow?.makeKeyAndOrderFront(nil)
+        editorFocusController.requestFocus(selectedRange: focusRange)
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
@@ -101,42 +64,6 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
         }
 
         return true
-    }
-
-    func windowWillClose(_ notification: Notification) {
-        guard let window = notification.object as? NSWindow else {
-            return
-        }
-
-        if window === capturePanel {
-            capturePanel = nil
-        }
-    }
-
-    private func saveCapture(_ capture: NSAttributedString) {
-        guard store.appendCapture(capture) else {
-            return
-        }
-
-        draftStore.clear()
-        closeCaptureWindow()
-    }
-
-    private func closeCaptureWindow() {
-        capturePanel?.delegate = nil
-        capturePanel?.orderOut(nil)
-        capturePanel?.close()
-        capturePanel = nil
-    }
-}
-
-private final class CapturePanel: NSPanel {
-    override var canBecomeKey: Bool {
-        true
-    }
-
-    override func cancelOperation(_ sender: Any?) {
-        // Do not close the capture panel on Escape.
     }
 }
 

@@ -1,17 +1,15 @@
 # Shining
 
-Shining is a small macOS app for capturing ideas without breaking your workflow.
+Shining is a small macOS app for timestamped idea journaling without breaking your workflow.
 
-Press `Command + Option + Space`, type a quick thought, then save it with the button or `Command + Enter`. The capture window closes, and your note is appended to a local editable idea file.
+Press `Command + Option + Space` to bring up the editor window and insert a timestamp at the top of your local editable idea file. The cursor lands below the timestamp so you can start typing immediately.
 
 ## Features
 
 - Global hotkey: `Command + Option + Space`
-- Fast 400 x 300 capture window
-- Rich text input with images
-- Save with `Command + Enter`
-- Ideas are appended with timestamps and image attachments
-- Main editor window for reviewing and editing saved ideas
+- Main editor window for writing, reviewing, and editing saved ideas
+- New timestamps are inserted at the top, newest first
+- Rich text editing with images
 - Local persistence in Application Support
 - Native macOS app icon
 
@@ -106,14 +104,7 @@ Saved ideas are stored at:
 ~/Library/Application Support/Shining/ideas.rtfd
 ```
 
-Capture drafts are stored at:
-
-```text
-~/Library/Application Support/Shining/capture-draft.rtfd
-```
-
-Existing `ideas.md` and `capture-draft.txt` files are not automatically
-migrated.
+Existing `ideas.md` files are not automatically migrated.
 
 ## Project Structure
 

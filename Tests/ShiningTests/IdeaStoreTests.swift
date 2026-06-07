@@ -3,38 +3,66 @@ import XCTest
 @testable import ShiningCore
 
 final class IdeaStoreTests: XCTestCase {
-    func testEmptyInputDoesNotAppend() {
-        let existing = NSAttributedString(string: "already here")
+    func testEmptyDocumentInsertsTimestampAndReturnsCursorAtEnd() throws {
+        let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
+        defer { try? FileManager.default.removeItem(at: directory) }
 
-        let result = IdeaRichTextAppender.append(
-            existing: existing,
-            capture: NSAttributedString(string: "  \n\t "),
-            timestamp: "2026-06-02 08:40"
+        let store = IdeaStore(fileURL: fileURL)
+        let cursorRange = store.insertTimestamp(
+            date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40)
         )
+        let expectedDocument = "2026-06-02 08:40\n\n"
 
-        XCTAssertEqual(result.string, existing.string)
-        XCTAssertFalse(containsAttachment(result))
+        XCTAssertEqual(store.document.string, expectedDocument)
+        XCTAssertEqual(cursorRange.location, expectedDocument.utf16.count)
+        XCTAssertEqual(cursorRange.length, 0)
+        XCTAssertTrue(store.hasContent)
     }
 
-    func testNonEmptyInputAppendsWithTimestamp() {
-        let result = IdeaRichTextAppender.append(
-            existing: NSAttributedString(string: ""),
-            capture: NSAttributedString(string: "first idea"),
-            timestamp: "2026-06-02 08:40"
+    func testExistingDocumentInsertsTimestampAboveContentAndReturnsBodyStart() throws {
+        let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = IdeaStore(fileURL: fileURL)
+        store.replaceDocument(NSAttributedString(string: "older idea"))
+
+        let cursorRange = store.insertTimestamp(
+            date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40)
         )
+        let timestampBlock = "2026-06-02 08:40\n\n"
 
         XCTAssertEqual(
-            result.string,
-            """
-            2026-06-02 08:40
-
-            first idea
-            """
+            store.document.string,
+            "\(timestampBlock)\n\nolder idea"
         )
+        XCTAssertEqual(cursorRange.location, timestampBlock.utf16.count)
+        XCTAssertEqual(cursorRange.length, 0)
+    }
+
+    func testConsecutiveTimestampsInsertInReverseOrder() throws {
+        let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = IdeaStore(fileURL: fileURL)
+        store.insertTimestamp(
+            date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40)
+        )
+        let cursorRange = store.insertTimestamp(
+            date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 41)
+        )
+        let latestTimestampBlock = "2026-06-02 08:41\n\n"
+
+        XCTAssertEqual(
+            store.document.string,
+            "\(latestTimestampBlock)\n\n2026-06-02 08:40\n\n"
+        )
+        XCTAssertEqual(cursorRange.location, latestTimestampBlock.utf16.count)
+        XCTAssertEqual(cursorRange.length, 0)
     }
 
     func testStorePersistsRTFDText() throws {
         let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
+        defer { try? FileManager.default.removeItem(at: directory) }
 
         let store = IdeaStore(fileURL: fileURL)
         store.replaceDocument(NSAttributedString(string: "edited content"))
@@ -42,12 +70,11 @@ final class IdeaStoreTests: XCTestCase {
 
         let reloaded = IdeaStore(fileURL: fileURL)
         XCTAssertEqual(reloaded.document.string, "edited content")
-
-        try? FileManager.default.removeItem(at: directory)
     }
 
     func testStorePersistsImageAttachment() throws {
         let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
+        defer { try? FileManager.default.removeItem(at: directory) }
         let document = NSMutableAttributedString(string: "image:\n")
         document.append(makeImageAttributedString())
 
@@ -57,22 +84,25 @@ final class IdeaStoreTests: XCTestCase {
 
         let reloaded = IdeaStore(fileURL: fileURL)
         XCTAssertTrue(containsAttachment(reloaded.document))
-
-        try? FileManager.default.removeItem(at: directory)
     }
 
-    func testImageOnlyCaptureAppends() throws {
+    func testTimestampInsertPreservesExistingImageAttachment() throws {
         let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let document = NSMutableAttributedString(string: "image:\n")
+        document.append(makeImageAttributedString())
         let store = IdeaStore(fileURL: fileURL)
+        store.replaceDocument(document)
 
-        XCTAssertTrue(store.appendCapture(
-            makeImageAttributedString(),
-            date: Date(timeIntervalSince1970: 1_780_390_800)
-        ))
-        XCTAssertTrue(store.hasContent)
+        let cursorRange = store.insertTimestamp(
+            date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40)
+        )
+        let timestampBlock = "2026-06-02 08:40\n\n"
+
+        XCTAssertTrue(store.document.string.hasPrefix("\(timestampBlock)\n\nimage:\n"))
+        XCTAssertEqual(cursorRange.location, timestampBlock.utf16.count)
+        XCTAssertEqual(cursorRange.length, 0)
         XCTAssertTrue(containsAttachment(store.document))
-
-        try? FileManager.default.removeItem(at: directory)
     }
 }
 
@@ -104,6 +134,27 @@ private func makePNGData() -> Data {
     )
 
     return representation?.representation(using: .png, properties: [:]) ?? Data()
+}
+
+private func makeLocalDate(
+    year: Int,
+    month: Int,
+    day: Int,
+    hour: Int,
+    minute: Int
+) -> Date {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = .current
+
+    var components = DateComponents()
+    components.calendar = calendar
+    components.timeZone = calendar.timeZone
+    components.year = year
+    components.month = month
+    components.day = day
+    components.hour = hour
+    components.minute = minute
+    return calendar.date(from: components)!
 }
 
 private func containsAttachment(_ document: NSAttributedString) -> Bool {

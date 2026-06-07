@@ -36,22 +36,18 @@ public final class IdeaStore: ObservableObject {
         scheduleSave()
     }
 
-    public func appendCapture(_ capture: NSAttributedString, date: Date = Date()) -> Bool {
-        guard RichTextDocument.hasMeaningfulContent(capture) else {
-            return false
-        }
-
+    @discardableResult
+    public func insertTimestamp(date: Date = Date()) -> NSRange {
         let timestamp = timestampFormatter.string(from: date)
-        let updatedDocument = IdeaRichTextAppender.append(
-            existing: document,
-            capture: capture,
-            timestamp: timestamp
+        let insertion = IdeaTimestampInserter.insert(
+            timestamp: timestamp,
+            into: document
         )
 
-        document = updatedDocument
+        document = insertion.document
         revision += 1
         saveNow()
-        return true
+        return insertion.cursorRange
     }
 
     public func saveNow() {

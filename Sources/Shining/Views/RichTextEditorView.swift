@@ -5,14 +5,14 @@ import UniformTypeIdentifiers
 struct RichTextEditorView: NSViewRepresentable {
     let document: NSAttributedString
     let revision: Int
-    let focusRequest: Int
+    let focusRequest: RichTextEditorFocusRequest
     let textContainerInset: NSSize
     let onChange: (NSAttributedString) -> Void
 
     init(
         document: NSAttributedString,
         revision: Int,
-        focusRequest: Int,
+        focusRequest: RichTextEditorFocusRequest,
         textContainerInset: NSSize = NSSize(width: 8, height: 8),
         onChange: @escaping (NSAttributedString) -> Void
     ) {
@@ -42,7 +42,12 @@ struct RichTextEditorView: NSViewRepresentable {
         textView.constrainImageAttachmentsToTextWidth()
 
         context.coordinator.appliedRevision = revision
-        context.coordinator.focusRequest = focusRequest
+        context.coordinator.appliedFocusRequestID = focusRequest.id
+        if focusRequest.id > 0 {
+            DispatchQueue.main.async {
+                Self.applyFocusRequest(focusRequest, to: scrollView)
+            }
+        }
         return scrollView
     }
 
@@ -60,24 +65,47 @@ struct RichTextEditorView: NSViewRepresentable {
             context.coordinator.appliedRevision = revision
         }
 
-        if context.coordinator.focusRequest != focusRequest {
-            context.coordinator.focusRequest = focusRequest
+        if context.coordinator.appliedFocusRequestID != focusRequest.id {
+            context.coordinator.appliedFocusRequestID = focusRequest.id
             DispatchQueue.main.async {
-                scrollView.window?.makeFirstResponder(textView)
+                Self.applyFocusRequest(focusRequest, to: scrollView)
             }
         }
+    }
+
+    private static func applyFocusRequest(
+        _ request: RichTextEditorFocusRequest,
+        to scrollView: RichTextScrollView
+    ) {
+        guard request.id > 0 else {
+            return
+        }
+
+        let textView = scrollView.richTextView
+        scrollView.window?.makeFirstResponder(textView)
+
+        if let selectedRange = request.selectedRange {
+            let documentLength = textView.textStorage?.length ?? 0
+            let location = min(max(0, selectedRange.location), documentLength)
+            let length = min(max(0, selectedRange.length), documentLength - location)
+            let clampedRange = NSRange(location: location, length: length)
+            textView.setSelectedRange(clampedRange)
+            textView.scrollRangeToVisible(NSRange(location: location, length: 0))
+        }
+
+        textView.typingAttributes = RichTextView.defaultTypingAttributes
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: RichTextEditorView
         var appliedRevision: Int
-        var focusRequest: Int
+        var appliedFocusRequestID: Int
         var isApplyingExternalChange = false
 
         init(_ parent: RichTextEditorView) {
             self.parent = parent
             self.appliedRevision = parent.revision
-            self.focusRequest = parent.focusRequest
+            self.appliedFocusRequestID = parent.focusRequest.id
         }
 
         func textDidChange(_ notification: Notification) {
@@ -125,6 +153,13 @@ final class RichTextScrollView: NSScrollView {
 }
 
 final class RichTextView: NSTextView {
+    static var defaultTypingAttributes: [NSAttributedString.Key: Any] {
+        [
+            .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
+            .foregroundColor: NSColor.labelColor
+        ]
+    }
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         configure()
@@ -217,10 +252,7 @@ final class RichTextView: NSTextView {
         drawsBackground = false
         usesAdaptiveColorMappingForDarkAppearance = true
         font = .systemFont(ofSize: NSFont.systemFontSize)
-        typingAttributes = [
-            .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
-            .foregroundColor: NSColor.labelColor
-        ]
+        typingAttributes = Self.defaultTypingAttributes
     }
 
     private func insertImages(_ urls: [URL], replacing range: NSRange) {
