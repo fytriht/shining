@@ -20,13 +20,21 @@ final class IdeaStoreTests: XCTestCase {
         let cursorRange = store.insertTimestamp(
             date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40)
         )
-        let expectedDocument = "2026-06-02 08:40\n\n"
+        let expectedDocument = "# 2026-06-02 08:40\n\n"
 
         XCTAssertEqual(store.document.string, expectedDocument)
         XCTAssertEqual(cursorRange.location, expectedDocument.utf16.count)
         XCTAssertEqual(cursorRange.length, 0)
         XCTAssertTrue(store.hasContent)
         XCTAssertEqual(store.savedTimestampBlockCount, 1)
+
+        let font = try XCTUnwrap(store.document.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)
+        XCTAssertEqual(font.pointSize, 10)
+        let traits = try XCTUnwrap(
+            font.fontDescriptor.object(forKey: .traits) as? [NSFontDescriptor.TraitKey: Any]
+        )
+        let weight = try XCTUnwrap(traits[.weight] as? CGFloat)
+        XCTAssertEqual(weight, NSFont.Weight.medium.rawValue, accuracy: 0.001)
     }
 
     func testExistingDocumentInsertsTimestampAboveContentAndReturnsBodyStart() throws {
@@ -39,7 +47,7 @@ final class IdeaStoreTests: XCTestCase {
         let cursorRange = store.insertTimestamp(
             date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40)
         )
-        let timestampBlock = "2026-06-02 08:40\n\n"
+        let timestampBlock = "# 2026-06-02 08:40\n\n"
 
         XCTAssertEqual(
             store.document.string,
@@ -60,7 +68,7 @@ final class IdeaStoreTests: XCTestCase {
         let cursorRange = store.insertTimestamp(
             date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 41)
         )
-        let latestTimestampBlock = "2026-06-02 08:41\n\n"
+        let latestTimestampBlock = "# 2026-06-02 08:41\n\n"
 
         XCTAssertEqual(
             store.document.string,
@@ -75,14 +83,14 @@ final class IdeaStoreTests: XCTestCase {
         let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
         defer { try? FileManager.default.removeItem(at: directory) }
         let document = [
-            "2026-06-02 08:42",
+            "# 2026-06-02 08:42",
             "",
             "first",
             "",
-            "2026-06-02 08:41",
+            "# 2026-06-02 08:41",
             "",
             "",
-            "2026-06-02 08:40",
+            "# 2026-06-02 08:40",
             "",
             "older"
         ].joined(separator: "\n")
@@ -101,11 +109,11 @@ final class IdeaStoreTests: XCTestCase {
         let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
         defer { try? FileManager.default.removeItem(at: directory) }
         let document = [
-            "2026-06-02 08:41",
+            "# 2026-06-02 08:41",
             "",
             "newer",
             "",
-            "2026-06-02 08:40",
+            "# 2026-06-02 08:40",
             "",
             "older"
         ].joined(separator: "\n")
@@ -119,21 +127,35 @@ final class IdeaStoreTests: XCTestCase {
         XCTAssertEqual(reloaded.savedTimestampBlockCount, 2)
     }
 
+    func testOldTimestampFormatIsNotCountedOrCleanedAsTimestampBlock() throws {
+        let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let document = "2026-06-02 08:40\n\nold body\n\n2026-06-02 08:39"
+
+        let store = IdeaStore(fileURL: fileURL)
+        store.replaceDocument(NSAttributedString(string: document))
+        store.saveNow()
+
+        XCTAssertEqual(store.savedTimestampBlockCount, 0)
+        XCTAssertFalse(store.cleanUpDocument(saveImmediately: true))
+        XCTAssertEqual(store.document.string, document)
+    }
+
     func testCleanUpRemovesEmptyTimestampBlocksAndTrimsKeptBodies() throws {
         let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
         defer { try? FileManager.default.removeItem(at: directory) }
         let document = [
-            "2026-06-02 08:43",
+            "# 2026-06-02 08:43",
             "",
             "",
-            "2026-06-02 08:42",
+            "# 2026-06-02 08:42",
             "",
             " keep me ",
             "",
-            "2026-06-02 08:41",
+            "# 2026-06-02 08:41",
             "",
             "",
-            "2026-06-02 08:40",
+            "# 2026-06-02 08:40",
             "",
             " older ",
             ""
@@ -145,7 +167,7 @@ final class IdeaStoreTests: XCTestCase {
         XCTAssertTrue(store.cleanUpDocument(saveImmediately: true))
         XCTAssertEqual(
             store.document.string,
-            "2026-06-02 08:42\n\nkeep me\n\n2026-06-02 08:40\n\nolder"
+            "# 2026-06-02 08:42\n\nkeep me\n\n# 2026-06-02 08:40\n\nolder"
         )
         XCTAssertEqual(store.savedTimestampBlockCount, 2)
     }
@@ -153,16 +175,16 @@ final class IdeaStoreTests: XCTestCase {
     func testCleanUpPreservesImageOnlyTimestampBlock() throws {
         let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
         defer { try? FileManager.default.removeItem(at: directory) }
-        let document = NSMutableAttributedString(string: "2026-06-02 08:40\n\n  \n")
+        let document = NSMutableAttributedString(string: "# 2026-06-02 08:40\n\n  \n")
         document.append(makeImageAttributedString())
-        document.append(NSAttributedString(string: "\n\n2026-06-02 08:39\n\n"))
+        document.append(NSAttributedString(string: "\n\n# 2026-06-02 08:39\n\n"))
 
         let store = IdeaStore(fileURL: fileURL)
         store.replaceDocument(document)
 
         XCTAssertTrue(store.cleanUpDocument(saveImmediately: true))
-        XCTAssertTrue(store.document.string.hasPrefix("2026-06-02 08:40\n\n"))
-        XCTAssertFalse(store.document.string.contains("2026-06-02 08:39"))
+        XCTAssertTrue(store.document.string.hasPrefix("# 2026-06-02 08:40\n\n"))
+        XCTAssertFalse(store.document.string.contains("# 2026-06-02 08:39"))
         XCTAssertTrue(containsAttachment(store.document))
     }
 
@@ -182,14 +204,14 @@ final class IdeaStoreTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let store = IdeaStore(fileURL: fileURL)
-        store.replaceDocument(NSAttributedString(string: "2026-06-02 08:40\n\n idea \n"))
+        store.replaceDocument(NSAttributedString(string: "# 2026-06-02 08:40\n\n idea \n"))
 
         XCTAssertEqual(store.revision, 0)
         XCTAssertTrue(store.cleanUpDocument(saveImmediately: true))
         XCTAssertEqual(store.revision, 1)
 
         let reloaded = IdeaStore(fileURL: fileURL)
-        XCTAssertEqual(reloaded.document.string, "2026-06-02 08:40\n\nidea")
+        XCTAssertEqual(reloaded.document.string, "# 2026-06-02 08:40\n\nidea")
     }
 
     func testStorePersistsRTFDText() throws {
@@ -229,7 +251,7 @@ final class IdeaStoreTests: XCTestCase {
         let cursorRange = store.insertTimestamp(
             date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40)
         )
-        let timestampBlock = "2026-06-02 08:40\n\n"
+        let timestampBlock = "# 2026-06-02 08:40\n\n"
 
         XCTAssertTrue(store.document.string.hasPrefix("\(timestampBlock)\n\nimage:\n"))
         XCTAssertEqual(cursorRange.location, timestampBlock.utf16.count)

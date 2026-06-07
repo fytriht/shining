@@ -212,20 +212,22 @@ public enum RichTextDocument {
     }
 
     private static func isTimestampLine(_ line: String) -> Bool {
-        guard line.count == 16 else {
+        guard line.count == 18 else {
             return false
         }
 
         let characters = Array(line)
-        let digitPositions = [0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15]
+        let digitPositions = [2, 3, 4, 5, 7, 8, 10, 11, 13, 14, 16, 17]
         for position in digitPositions where !isASCIIDigit(characters[position]) {
             return false
         }
 
-        return characters[4] == "-"
-            && characters[7] == "-"
-            && characters[10] == " "
-            && characters[13] == ":"
+        return characters[0] == "#"
+            && characters[1] == " "
+            && characters[6] == "-"
+            && characters[9] == "-"
+            && characters[12] == " "
+            && characters[15] == ":"
     }
 
     private static func isASCIIDigit(_ character: Character) -> Bool {
@@ -274,9 +276,9 @@ public enum IdeaTimestampInserter {
 
     private static func timestampLine(_ timestamp: String) -> NSAttributedString {
         let result = NSMutableAttributedString(
-            string: timestamp,
+            string: "# \(timestamp)",
             attributes: [
-                .font: NSFont.boldSystemFont(ofSize: NSFont.systemFontSize)
+                .font: NSFont.systemFont(ofSize: 10, weight: .medium)
             ]
         )
         result.append(RichTextDocument.bodyText("\n\n"))
