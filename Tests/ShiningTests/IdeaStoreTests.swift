@@ -141,6 +141,273 @@ final class IdeaStoreTests: XCTestCase {
         XCTAssertEqual(store.document.string, document)
     }
 
+    func testTimestampLineRangesAreNotUserEditable() throws {
+        let timestamp = "# 2026-06-02 08:40"
+        let document = NSAttributedString(string: "\(timestamp)\n\nbody")
+
+        XCTAssertFalse(
+            RichTextDocument.isUserEditableRange(
+                NSRange(location: 0, length: 0),
+                in: document
+            )
+        )
+        XCTAssertFalse(
+            RichTextDocument.isUserEditableRange(
+                NSRange(location: 2, length: 0),
+                in: document
+            )
+        )
+        XCTAssertFalse(
+            RichTextDocument.isUserEditableRange(
+                NSRange(location: 2, length: 1),
+                in: document
+            )
+        )
+        XCTAssertFalse(
+            RichTextDocument.isUserEditableRange(
+                NSRange(location: 2, length: 3),
+                in: document
+            )
+        )
+    }
+
+    func testTimestampLineEndingIsNotUserEditable() throws {
+        let timestamp = "# 2026-06-02 08:40"
+        let document = NSAttributedString(string: "\(timestamp)\n\nbody")
+
+        XCTAssertFalse(
+            RichTextDocument.isUserEditableRange(
+                NSRange(location: timestamp.utf16.count, length: 0),
+                in: document
+            )
+        )
+        XCTAssertFalse(
+            RichTextDocument.isUserEditableRange(
+                NSRange(location: timestamp.utf16.count, length: 1),
+                in: document
+            )
+        )
+        XCTAssertFalse(
+            RichTextDocument.isUserDeletableRange(
+                NSRange(location: timestamp.utf16.count, length: 1),
+                in: document
+            )
+        )
+    }
+
+    func testTimestampSeparatorAndBodyRangesAreUserEditable() throws {
+        let timestamp = "# 2026-06-02 08:40"
+        let document = NSAttributedString(string: "\(timestamp)\n\nbody")
+        let separatorLocation = timestamp.utf16.count + 1
+        let bodyLocation = (document.string as NSString).range(of: "body").location
+
+        XCTAssertTrue(
+            RichTextDocument.isUserEditableRange(
+                NSRange(location: separatorLocation, length: 1),
+                in: document
+            )
+        )
+        XCTAssertTrue(
+            RichTextDocument.isUserDeletableRange(
+                NSRange(location: separatorLocation, length: 1),
+                in: document
+            )
+        )
+        XCTAssertTrue(
+            RichTextDocument.isUserEditableRange(
+                NSRange(location: bodyLocation, length: 0),
+                in: document
+            )
+        )
+        XCTAssertTrue(
+            RichTextDocument.isUserEditableRange(
+                NSRange(location: bodyLocation, length: 4),
+                in: document
+            )
+        )
+        XCTAssertTrue(
+            RichTextDocument.isUserDeletableRange(
+                NSRange(location: bodyLocation, length: 4),
+                in: document
+            )
+        )
+    }
+
+    func testOldTimestampFormatIsUserEditable() throws {
+        let document = NSAttributedString(string: "2026-06-02 08:40\n\nbody")
+
+        XCTAssertTrue(
+            RichTextDocument.isUserEditableRange(
+                NSRange(location: 0, length: 1),
+                in: document
+            )
+        )
+        XCTAssertTrue(
+            RichTextDocument.isUserEditableRange(
+                NSRange(location: 2, length: 0),
+                in: document
+            )
+        )
+    }
+
+    func testCompleteTimestampLineRangeIsUserDeletable() throws {
+        let timestamp = "# 2026-06-02 08:40"
+        let document = NSAttributedString(string: "\(timestamp)\n\nbody")
+
+        XCTAssertTrue(
+            RichTextDocument.isUserDeletableRange(
+                NSRange(location: 0, length: timestamp.utf16.count + 1),
+                in: document
+            )
+        )
+    }
+
+    func testPartialTimestampLineRangeIsNotUserDeletable() throws {
+        let timestamp = "# 2026-06-02 08:40"
+        let document = NSAttributedString(string: "\(timestamp)\n\nbody")
+
+        XCTAssertFalse(
+            RichTextDocument.isUserDeletableRange(
+                NSRange(location: 0, length: 1),
+                in: document
+            )
+        )
+        XCTAssertFalse(
+            RichTextDocument.isUserDeletableRange(
+                NSRange(location: 0, length: timestamp.utf16.count),
+                in: document
+            )
+        )
+        XCTAssertFalse(
+            RichTextDocument.isUserDeletableRange(
+                NSRange(location: 2, length: timestamp.utf16.count),
+                in: document
+            )
+        )
+    }
+
+    func testWholeDocumentRangeWithTimestampIsUserDeletable() throws {
+        let document = NSAttributedString(string: "# 2026-06-02 08:40\n\nbody")
+
+        XCTAssertTrue(
+            RichTextDocument.isUserDeletableRange(
+                NSRange(location: 0, length: document.length),
+                in: document
+            )
+        )
+    }
+
+    func testTimestampLineDeletionRangeForBackwardDelete() throws {
+        let timestamp = "# 2026-06-02 08:40"
+        let document = NSAttributedString(string: "\(timestamp)\n\nbody")
+        let deletionRange = try XCTUnwrap(
+            RichTextDocument.timestampLineDeletionRangeForBackwardDelete(
+                at: timestamp.utf16.count + 1,
+                in: document
+            )
+        )
+
+        XCTAssertEqual(deletionRange.location, 0)
+        XCTAssertEqual(deletionRange.length, timestamp.utf16.count + 1)
+        XCTAssertNil(
+            RichTextDocument.timestampLineDeletionRangeForBackwardDelete(
+                at: timestamp.utf16.count,
+                in: document
+            )
+        )
+    }
+
+    func testTimestampLineDeletionRangeForForwardDelete() throws {
+        let timestamp = "# 2026-06-02 08:40"
+        let document = NSAttributedString(string: "\(timestamp)\n\nbody")
+        let deletionRange = try XCTUnwrap(
+            RichTextDocument.timestampLineDeletionRangeForForwardDelete(
+                at: 0,
+                in: document
+            )
+        )
+
+        XCTAssertEqual(deletionRange.location, 0)
+        XCTAssertEqual(deletionRange.length, timestamp.utf16.count + 1)
+        XCTAssertNil(
+            RichTextDocument.timestampLineDeletionRangeForForwardDelete(
+                at: 1,
+                in: document
+            )
+        )
+    }
+
+    func testMultipleTimestampLinesAreNotUserEditable() throws {
+        let documentString = [
+            "# 2026-06-02 08:41",
+            "",
+            "newer",
+            "",
+            "# 2026-06-02 08:40",
+            "",
+            "older"
+        ].joined(separator: "\n")
+        let document = NSAttributedString(string: documentString)
+        let string = documentString as NSString
+        let firstTimestampLocation = string.range(of: "# 2026-06-02 08:41").location
+        let secondTimestampLocation = string.range(of: "# 2026-06-02 08:40").location
+        let newerRange = string.range(of: "newer")
+
+        XCTAssertFalse(
+            RichTextDocument.isUserEditableRange(
+                NSRange(location: firstTimestampLocation, length: 1),
+                in: document
+            )
+        )
+        XCTAssertFalse(
+            RichTextDocument.isUserEditableRange(
+                NSRange(location: secondTimestampLocation + 2, length: 0),
+                in: document
+            )
+        )
+        XCTAssertTrue(
+            RichTextDocument.isUserEditableRange(newerRange, in: document)
+        )
+        XCTAssertFalse(
+            RichTextDocument.isUserEditableRange(
+                NSRange(
+                    location: newerRange.location,
+                    length: secondTimestampLocation + 1 - newerRange.location
+                ),
+                in: document
+            )
+        )
+        XCTAssertTrue(
+            RichTextDocument.isUserDeletableRange(
+                NSRange(
+                    location: secondTimestampLocation,
+                    length: "# 2026-06-02 08:40\n".utf16.count
+                ),
+                in: document
+            )
+        )
+        XCTAssertFalse(
+            RichTextDocument.isUserDeletableRange(
+                NSRange(location: secondTimestampLocation, length: 1),
+                in: document
+            )
+        )
+    }
+
+    func testDeletingLineBreakBeforeTimestampIsNotUserDeletable() throws {
+        let timestamp = "# 2026-06-02 08:40"
+        let documentString = "older\n\(timestamp)\n\nbody"
+        let document = NSAttributedString(string: documentString)
+        let timestampLocation = (documentString as NSString).range(of: timestamp).location
+
+        XCTAssertFalse(
+            RichTextDocument.isUserDeletableRange(
+                NSRange(location: timestampLocation - 1, length: 1),
+                in: document
+            )
+        )
+    }
+
     func testCleanUpRemovesEmptyTimestampBlocksAndTrimsKeptBodies() throws {
         let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
         defer { try? FileManager.default.removeItem(at: directory) }

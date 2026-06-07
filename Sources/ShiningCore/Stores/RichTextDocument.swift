@@ -14,6 +14,63 @@ public enum RichTextDocument {
         findTimestampLines(in: document).count
     }
 
+    public static func isUserEditableRange(
+        _ range: NSRange,
+        in document: NSAttributedString
+    ) -> Bool {
+        guard isValidRange(range, in: document) else {
+            return false
+        }
+
+        return findTimestampLines(in: document).allSatisfy { timestampLine in
+            !timestampLine.protectsEdit(range, documentLength: document.length)
+        }
+    }
+
+    public static func isUserDeletableRange(
+        _ range: NSRange,
+        in document: NSAttributedString
+    ) -> Bool {
+        guard isValidRange(range, in: document) else {
+            return false
+        }
+
+        guard range.length > 0 else {
+            return true
+        }
+
+        let string = document.string as NSString
+        return findTimestampLines(in: document).allSatisfy { timestampLine in
+            timestampLine.allowsDeletion(range, in: string)
+        }
+    }
+
+    public static func timestampLineDeletionRangeForBackwardDelete(
+        at location: Int,
+        in document: NSAttributedString
+    ) -> NSRange? {
+        guard location >= 0, location <= document.length else {
+            return nil
+        }
+
+        return findTimestampLines(in: document)
+            .first { $0.lineRange.endLocation == location }?
+            .lineRange
+    }
+
+    public static func timestampLineDeletionRangeForForwardDelete(
+        at location: Int,
+        in document: NSAttributedString
+    ) -> NSRange? {
+        guard location >= 0, location <= document.length else {
+            return nil
+        }
+
+        return findTimestampLines(in: document)
+            .first { $0.lineRange.location == location }?
+            .lineRange
+    }
+
     public static func cleaned(_ document: NSAttributedString) -> NSAttributedString {
         let timestampLines = findTimestampLines(in: document)
         guard !timestampLines.isEmpty else {
@@ -176,6 +233,19 @@ public enum RichTextDocument {
         return CharacterSet.whitespacesAndNewlines.contains(scalar)
     }
 
+    private static func isValidRange(
+        _ range: NSRange,
+        in document: NSAttributedString
+    ) -> Bool {
+        guard range.location >= 0,
+              range.length >= 0,
+              range.location <= document.length else {
+            return false
+        }
+
+        return range.length <= document.length - range.location
+    }
+
     private static func findTimestampLines(in document: NSAttributedString) -> [TimestampLine] {
         let string = document.string as NSString
         var lines: [TimestampLine] = []
@@ -241,6 +311,50 @@ public enum RichTextDocument {
     private struct TimestampLine {
         let lineRange: NSRange
         let contentRange: NSRange
+
+        func protectsEdit(_ range: NSRange, documentLength: Int) -> Bool {
+            if range.length == 0 {
+                return protectsInsertion(at: range.location, documentLength: documentLength)
+            }
+
+            if NSIntersectionRange(range, lineRange).length > 0 {
+                return true
+            }
+
+            return range.endLocation == lineRange.location
+        }
+
+        private func protectsInsertion(at location: Int, documentLength: Int) -> Bool {
+            if NSLocationInRange(location, lineRange) {
+                return true
+            }
+
+            let hasTerminatingNewline = lineRange.endLocation > contentRange.endLocation
+            return !hasTerminatingNewline &&
+                lineRange.endLocation == documentLength &&
+                location == lineRange.endLocation
+        }
+
+        func allowsDeletion(_ range: NSRange, in string: NSString) -> Bool {
+            if NSIntersectionRange(range, lineRange).length > 0 {
+                return range.location <= lineRange.location &&
+                    range.endLocation >= lineRange.endLocation
+            }
+
+            guard range.endLocation == lineRange.location else {
+                return true
+            }
+
+            if range.location == 0 {
+                return true
+            }
+
+            return isLineEnding(string.character(at: range.location - 1))
+        }
+
+        private func isLineEnding(_ character: unichar) -> Bool {
+            character == 10 || character == 13
+        }
     }
 }
 

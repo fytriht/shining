@@ -1,4 +1,5 @@
 import AppKit
+import ShiningCore
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -108,6 +109,30 @@ struct RichTextEditorView: NSViewRepresentable {
             self.appliedFocusRequestID = parent.focusRequest.id
         }
 
+        func textView(
+            _ textView: NSTextView,
+            shouldChangeTextIn affectedCharRange: NSRange,
+            replacementString: String?
+        ) -> Bool {
+            guard !isApplyingExternalChange,
+                  let textStorage = textView.textStorage else {
+                return true
+            }
+
+            let document = NSAttributedString(attributedString: textStorage)
+            if replacementString == "" {
+                return RichTextDocument.isUserDeletableRange(
+                    affectedCharRange,
+                    in: document
+                )
+            }
+
+            return RichTextDocument.isUserEditableRange(
+                affectedCharRange,
+                in: document
+            )
+        }
+
         func textDidChange(_ notification: Notification) {
             guard !isApplyingExternalChange,
                   let textView = notification.object as? RichTextView,
@@ -203,6 +228,22 @@ final class RichTextView: NSTextView {
         constrainImageAttachmentsToTextWidth()
     }
 
+    override func deleteBackward(_ sender: Any?) {
+        guard selectedRange().length == 0,
+              deleteTimestampLineForBackwardDeleteIfNeeded() else {
+            super.deleteBackward(sender)
+            return
+        }
+    }
+
+    override func deleteForward(_ sender: Any?) {
+        guard selectedRange().length == 0,
+              deleteTimestampLineForForwardDeleteIfNeeded() else {
+            super.deleteForward(sender)
+            return
+        }
+    }
+
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         constrainImageAttachmentsToTextWidth()
@@ -273,6 +314,49 @@ final class RichTextView: NSTextView {
         textStorage?.replaceCharacters(in: range, with: insertedText)
         didChangeText()
         constrainImageAttachmentsToTextWidth()
+    }
+
+    private func deleteTimestampLineForBackwardDeleteIfNeeded() -> Bool {
+        guard let textStorage else {
+            return false
+        }
+
+        let document = NSAttributedString(attributedString: textStorage)
+        guard let deletionRange = RichTextDocument.timestampLineDeletionRangeForBackwardDelete(
+            at: selectedRange().location,
+            in: document
+        ) else {
+            return false
+        }
+
+        return deleteCharacters(in: deletionRange)
+    }
+
+    private func deleteTimestampLineForForwardDeleteIfNeeded() -> Bool {
+        guard let textStorage else {
+            return false
+        }
+
+        let document = NSAttributedString(attributedString: textStorage)
+        guard let deletionRange = RichTextDocument.timestampLineDeletionRangeForForwardDelete(
+            at: selectedRange().location,
+            in: document
+        ) else {
+            return false
+        }
+
+        return deleteCharacters(in: deletionRange)
+    }
+
+    private func deleteCharacters(in range: NSRange) -> Bool {
+        guard shouldChangeText(in: range, replacementString: "") else {
+            return false
+        }
+
+        textStorage?.replaceCharacters(in: range, with: "")
+        setSelectedRange(NSRange(location: range.location, length: 0))
+        didChangeText()
+        return true
     }
 
     private func makeImageAttachment(for fileURL: URL) -> NSTextAttachment? {
