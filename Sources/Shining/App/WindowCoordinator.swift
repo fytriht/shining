@@ -9,13 +9,18 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
     )
 
     private let store: IdeaStore
+    private let systemSelectionService: SystemSelectionService
     private let editorFocusController = EditorFocusController()
     private var hotKeyService: HotKeyService?
     private var mainWindow: NSWindow?
     private var dockBadgeCancellable: AnyCancellable?
 
-    init(store: IdeaStore) {
+    init(
+        store: IdeaStore,
+        systemSelectionService: SystemSelectionService = SystemSelectionService()
+    ) {
         self.store = store
+        self.systemSelectionService = systemSelectionService
         super.init()
     }
 
@@ -39,7 +44,8 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
     }
 
     func showEditorAndInsertTimestamp() {
-        let cursorRange = store.insertTimestamp()
+        let selectedText = NSApp.isActive ? nil : systemSelectionService.selectedText()
+        let cursorRange = store.insertTimestamp(selectedText: selectedText)
         showMainWindow(focusRange: cursorRange, cleanUpBeforeShowing: false)
     }
 

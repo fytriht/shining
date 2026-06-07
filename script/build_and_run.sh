@@ -15,6 +15,11 @@ APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 
+find_developer_id_identity() {
+  security find-identity -v -p codesigning 2>/dev/null |
+    awk '/"Developer ID Application: / {print $2; exit}'
+}
+
 pkill -x "$APP_NAME" >/dev/null 2>&1 || true
 
 swift build
@@ -54,6 +59,31 @@ cat >"$INFO_PLIST" <<PLIST
 </plist>
 PLIST
 
+plutil -lint "$INFO_PLIST" >/dev/null
+
+CODESIGN_IDENTITY="${SHINING_CODESIGN_IDENTITY:-${CODESIGN_IDENTITY:-}}"
+if [[ -z "$CODESIGN_IDENTITY" ]]; then
+  CODESIGN_IDENTITY="$(find_developer_id_identity || true)"
+fi
+
+if [[ -n "$CODESIGN_IDENTITY" && "$CODESIGN_IDENTITY" != "-" ]]; then
+  CODESIGN_ARGS=(
+    --force
+    --deep
+    --options runtime
+    --timestamp
+    --sign "$CODESIGN_IDENTITY"
+  )
+
+  if [[ -n "${SHINING_RELEASE_KEYCHAIN:-}" ]]; then
+    CODESIGN_ARGS+=(--keychain "$SHINING_RELEASE_KEYCHAIN")
+  fi
+
+  codesign "${CODESIGN_ARGS[@]}" "$APP_BUNDLE" >/dev/null
+else
+  codesign --force --deep --sign - "$APP_BUNDLE" >/dev/null
+fi
+
 open_app() {
   /usr/bin/open -n "$APP_BUNDLE"
 }
@@ -69,17 +99,13 @@ case "$MODE" in
     open_app
     /usr/bin/log stream --info --style compact --predicate "process == \"$APP_NAME\""
     ;;
-  --telemetry|telemetry)
-    open_app
-    /usr/bin/log stream --info --style compact --predicate "subsystem == \"$BUNDLE_ID\""
-    ;;
   --verify|verify)
     open_app
     sleep 1
     pgrep -x "$APP_NAME" >/dev/null
     ;;
   *)
-    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify]" >&2
+    echo "usage: $0 [run|--debug|--logs|--verify]" >&2
     exit 2
     ;;
 esac

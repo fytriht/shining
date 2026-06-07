@@ -372,13 +372,24 @@ public enum IdeaTimestampInserter {
 
     public static func insert(
         timestamp: String,
+        selectedText: String? = nil,
         into existing: NSAttributedString
     ) -> Insertion {
         let result = NSMutableAttributedString()
         let timestampBlock = timestampLine(timestamp)
         result.append(timestampBlock)
 
-        let cursorRange = NSRange(location: timestampBlock.length, length: 0)
+        let selectedBody = selectedText.flatMap { text in
+            text.isEmpty ? nil : RichTextDocument.bodyText(text)
+        }
+        let cursorRange: NSRange
+        if let selectedBody {
+            let selectionLocation = result.length
+            result.append(selectedBody)
+            cursorRange = NSRange(location: selectionLocation, length: selectedBody.length)
+        } else {
+            cursorRange = NSRange(location: timestampBlock.length, length: 0)
+        }
 
         if RichTextDocument.hasMeaningfulContent(existing) {
             result.append(RichTextDocument.bodyText("\n\n"))

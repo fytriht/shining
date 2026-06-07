@@ -57,6 +57,91 @@ final class IdeaStoreTests: XCTestCase {
         XCTAssertEqual(cursorRange.length, 0)
     }
 
+    func testEmptyDocumentInsertsSelectedTextAndReturnsSelectedRange() throws {
+        let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = IdeaStore(fileURL: fileURL)
+        let selectedText = "captured idea"
+        let cursorRange = store.insertTimestamp(
+            date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40),
+            selectedText: selectedText
+        )
+        let timestampBlock = "# 2026-06-02 08:40\n\n"
+
+        XCTAssertEqual(store.document.string, "\(timestampBlock)\(selectedText)")
+        XCTAssertEqual(cursorRange.location, timestampBlock.utf16.count)
+        XCTAssertEqual(cursorRange.length, selectedText.utf16.count)
+        XCTAssertEqual(
+            (store.document.string as NSString).substring(with: cursorRange),
+            selectedText
+        )
+        XCTAssertEqual(store.savedTimestampBlockCount, 1)
+    }
+
+    func testExistingDocumentInsertsSelectedTextAboveContentAndReturnsSelectedRange() throws {
+        let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = IdeaStore(fileURL: fileURL)
+        store.replaceDocument(NSAttributedString(string: "older idea"))
+
+        let selectedText = "captured idea"
+        let cursorRange = store.insertTimestamp(
+            date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40),
+            selectedText: selectedText
+        )
+        let timestampBlock = "# 2026-06-02 08:40\n\n"
+
+        XCTAssertEqual(
+            store.document.string,
+            "\(timestampBlock)\(selectedText)\n\nolder idea"
+        )
+        XCTAssertEqual(cursorRange.location, timestampBlock.utf16.count)
+        XCTAssertEqual(cursorRange.length, selectedText.utf16.count)
+        XCTAssertEqual(
+            (store.document.string as NSString).substring(with: cursorRange),
+            selectedText
+        )
+    }
+
+    func testSelectedTextInsertionPreservesMultilineUnicodeAndReturnsUTF16Range() throws {
+        let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = IdeaStore(fileURL: fileURL)
+        let selectedText = "第一行\nsecond 😀 line"
+        let cursorRange = store.insertTimestamp(
+            date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40),
+            selectedText: selectedText
+        )
+        let timestampBlock = "# 2026-06-02 08:40\n\n"
+
+        XCTAssertEqual(store.document.string, "\(timestampBlock)\(selectedText)")
+        XCTAssertEqual(cursorRange.location, timestampBlock.utf16.count)
+        XCTAssertEqual(cursorRange.length, selectedText.utf16.count)
+        XCTAssertEqual(
+            (store.document.string as NSString).substring(with: cursorRange),
+            selectedText
+        )
+    }
+
+    func testEmptySelectedTextKeepsTimestampOnlyInsertionBehavior() throws {
+        let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = IdeaStore(fileURL: fileURL)
+        let cursorRange = store.insertTimestamp(
+            date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40),
+            selectedText: ""
+        )
+        let expectedDocument = "# 2026-06-02 08:40\n\n"
+
+        XCTAssertEqual(store.document.string, expectedDocument)
+        XCTAssertEqual(cursorRange.location, expectedDocument.utf16.count)
+        XCTAssertEqual(cursorRange.length, 0)
+    }
+
     func testConsecutiveTimestampsInsertInReverseOrder() throws {
         let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
         defer { try? FileManager.default.removeItem(at: directory) }

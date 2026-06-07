@@ -61,12 +61,16 @@ public final class IdeaStore: ObservableObject {
     }
 
     @discardableResult
-    public func insertTimestamp(date: Date = Date()) -> NSRange {
+    public func insertTimestamp(
+        date: Date = Date(),
+        selectedText: String? = nil
+    ) -> NSRange {
         cleanUpDocument()
 
         let timestamp = timestampFormatter.string(from: date)
         let insertion = IdeaTimestampInserter.insert(
             timestamp: timestamp,
+            selectedText: selectedText,
             into: document
         )
 
