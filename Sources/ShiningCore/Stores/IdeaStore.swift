@@ -5,6 +5,7 @@ import Foundation
 public final class IdeaStore: ObservableObject {
     @Published public private(set) var document: NSAttributedString
     @Published public private(set) var revision = 0
+    @Published public private(set) var savedTimestampBlockCount: Int
 
     private let fileURL: URL
     private let timestampFormatter: DateFormatter
@@ -13,7 +14,9 @@ public final class IdeaStore: ObservableObject {
     public init(fileURL: URL = IdeaStore.defaultFileURL()) {
         self.fileURL = fileURL
         self.timestampFormatter = IdeaStore.makeTimestampFormatter()
-        self.document = RichTextDocument.load(from: fileURL)
+        let document = RichTextDocument.load(from: fileURL)
+        self.document = document
+        self.savedTimestampBlockCount = RichTextDocument.timestampBlockCount(in: document)
     }
 
     public var hasContent: Bool {
@@ -79,6 +82,7 @@ public final class IdeaStore: ObservableObject {
 
         do {
             try RichTextDocument.save(document, to: fileURL)
+            savedTimestampBlockCount = RichTextDocument.timestampBlockCount(in: document)
         } catch {
             assertionFailure("Failed to save ideas: \(error)")
         }

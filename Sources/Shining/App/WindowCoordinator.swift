@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import ShiningCore
 import SwiftUI
 
@@ -11,6 +12,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
     private let editorFocusController = EditorFocusController()
     private var hotKeyService: HotKeyService?
     private var mainWindow: NSWindow?
+    private var dockBadgeCancellable: AnyCancellable?
 
     init(store: IdeaStore) {
         self.store = store
@@ -18,6 +20,8 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
     }
 
     func start() {
+        startDockBadgeUpdates()
+
         let hotKeyService = HotKeyService { [weak self] in
             self?.showEditorAndInsertTimestamp()
         }
@@ -26,6 +30,8 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
     }
 
     func stop() {
+        dockBadgeCancellable?.cancel()
+        dockBadgeCancellable = nil
         hotKeyService?.unregister()
         saveMainWindowFrame()
         store.cleanUpDocument(saveImmediately: false)
@@ -101,6 +107,14 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
 
     private func saveMainWindowFrame() {
         mainWindow?.saveFrame(usingName: Self.mainWindowFrameAutosaveName)
+    }
+
+    private func startDockBadgeUpdates() {
+        dockBadgeCancellable = store.$savedTimestampBlockCount
+            .receive(on: RunLoop.main)
+            .sink { count in
+                NSApp.dockTile.badgeLabel = count > 0 ? String(count) : nil
+            }
     }
 }
 

@@ -10,6 +10,10 @@ public enum RichTextDocument {
         NSAttributedString(attributedString: document)
     }
 
+    public static func timestampBlockCount(in document: NSAttributedString) -> Int {
+        findTimestampLines(in: document).count
+    }
+
     public static func cleaned(_ document: NSAttributedString) -> NSAttributedString {
         let timestampLines = findTimestampLines(in: document)
         guard !timestampLines.isEmpty else {

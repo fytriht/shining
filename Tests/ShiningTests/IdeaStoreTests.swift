@@ -3,6 +3,15 @@ import XCTest
 @testable import ShiningCore
 
 final class IdeaStoreTests: XCTestCase {
+    func testEmptyDocumentStartsWithZeroSavedTimestampBlockCount() throws {
+        let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = IdeaStore(fileURL: fileURL)
+
+        XCTAssertEqual(store.savedTimestampBlockCount, 0)
+    }
+
     func testEmptyDocumentInsertsTimestampAndReturnsCursorAtEnd() throws {
         let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -17,6 +26,7 @@ final class IdeaStoreTests: XCTestCase {
         XCTAssertEqual(cursorRange.location, expectedDocument.utf16.count)
         XCTAssertEqual(cursorRange.length, 0)
         XCTAssertTrue(store.hasContent)
+        XCTAssertEqual(store.savedTimestampBlockCount, 1)
     }
 
     func testExistingDocumentInsertsTimestampAboveContentAndReturnsBodyStart() throws {
@@ -58,6 +68,55 @@ final class IdeaStoreTests: XCTestCase {
         )
         XCTAssertEqual(cursorRange.location, latestTimestampBlock.utf16.count)
         XCTAssertEqual(cursorRange.length, 0)
+        XCTAssertEqual(store.savedTimestampBlockCount, 1)
+    }
+
+    func testSavedTimestampBlockCountUpdatesOnlyAfterSave() throws {
+        let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let document = [
+            "2026-06-02 08:42",
+            "",
+            "first",
+            "",
+            "2026-06-02 08:41",
+            "",
+            "",
+            "2026-06-02 08:40",
+            "",
+            "older"
+        ].joined(separator: "\n")
+
+        let store = IdeaStore(fileURL: fileURL)
+        store.replaceDocument(NSAttributedString(string: document))
+
+        XCTAssertEqual(store.savedTimestampBlockCount, 0)
+
+        store.saveNow()
+
+        XCTAssertEqual(store.savedTimestampBlockCount, 3)
+    }
+
+    func testSavedTimestampBlockCountLoadsFromExistingFile() throws {
+        let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let document = [
+            "2026-06-02 08:41",
+            "",
+            "newer",
+            "",
+            "2026-06-02 08:40",
+            "",
+            "older"
+        ].joined(separator: "\n")
+
+        let store = IdeaStore(fileURL: fileURL)
+        store.replaceDocument(NSAttributedString(string: document))
+        store.saveNow()
+
+        let reloaded = IdeaStore(fileURL: fileURL)
+
+        XCTAssertEqual(reloaded.savedTimestampBlockCount, 2)
     }
 
     func testCleanUpRemovesEmptyTimestampBlocksAndTrimsKeptBodies() throws {
@@ -88,6 +147,7 @@ final class IdeaStoreTests: XCTestCase {
             store.document.string,
             "2026-06-02 08:42\n\nkeep me\n\n2026-06-02 08:40\n\nolder"
         )
+        XCTAssertEqual(store.savedTimestampBlockCount, 2)
     }
 
     func testCleanUpPreservesImageOnlyTimestampBlock() throws {
