@@ -49,14 +49,50 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
             return
         }
 
-        systemSelectionService.selectedText { [weak self] selectedText in
-            self?.showEditorAndInsertTimestamp(selectedText: selectedText)
+        let delayedSelectionCapture = DelayedSelectionCapture()
+        systemSelectionService.selectedText { [weak self, delayedSelectionCapture] selectedText in
+            delayedSelectionCapture.selectedText = selectedText
+            delayedSelectionCapture.didReceiveSelectedText = true
+
+            guard let pendingSelectionInsertion =
+                delayedSelectionCapture.pendingSelectionInsertion else {
+                return
+            }
+
+            self?.insertDelayedSelection(
+                selectedText,
+                for: pendingSelectionInsertion
+            )
         }
+
+        let insertion = store.insertTimestampForDelayedSelection()
+        delayedSelectionCapture.pendingSelectionInsertion = insertion.pendingSelectionInsertion
+        if delayedSelectionCapture.didReceiveSelectedText {
+            insertDelayedSelection(
+                delayedSelectionCapture.selectedText,
+                for: insertion.pendingSelectionInsertion
+            )
+        }
+        showMainWindow(focusRange: insertion.cursorRange, cleanUpBeforeShowing: false)
     }
 
     private func showEditorAndInsertTimestamp(selectedText: String?) {
         let cursorRange = store.insertTimestamp(selectedText: selectedText)
         showMainWindow(focusRange: cursorRange, cleanUpBeforeShowing: false)
+    }
+
+    private func insertDelayedSelection(
+        _ selectedText: String?,
+        for pendingSelectionInsertion: IdeaStore.PendingSelectionInsertion
+    ) {
+        guard let selectedRange = store.insertSelectedText(
+            selectedText,
+            for: pendingSelectionInsertion
+        ) else {
+            return
+        }
+
+        editorFocusController.requestFocus(selectedRange: selectedRange)
     }
 
     func showMainWindow(
@@ -132,6 +168,12 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
                 NSApp.dockTile.badgeLabel = count > 0 ? String(count) : nil
             }
     }
+}
+
+private final class DelayedSelectionCapture {
+    var pendingSelectionInsertion: IdeaStore.PendingSelectionInsertion?
+    var selectedText: String?
+    var didReceiveSelectedText = false
 }
 
 private final class EscClosableWindow: NSWindow {

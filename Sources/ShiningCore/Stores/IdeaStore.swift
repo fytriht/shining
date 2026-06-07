@@ -3,6 +3,17 @@ import Combine
 import Foundation
 
 public final class IdeaStore: ObservableObject {
+    public struct PendingSelectionInsertion {
+        fileprivate let revision: Int
+        fileprivate let documentAfterTimestamp: NSAttributedString
+        fileprivate let insertionRange: NSRange
+    }
+
+    public struct DelayedSelectionTimestampInsertion {
+        public let cursorRange: NSRange
+        public let pendingSelectionInsertion: PendingSelectionInsertion
+    }
+
     @Published public private(set) var document: NSAttributedString
     @Published public private(set) var revision = 0
     @Published public private(set) var savedTimestampBlockCount: Int
@@ -78,6 +89,49 @@ public final class IdeaStore: ObservableObject {
         revision += 1
         saveNow()
         return insertion.cursorRange
+    }
+
+    public func insertTimestampForDelayedSelection(
+        date: Date = Date()
+    ) -> DelayedSelectionTimestampInsertion {
+        let cursorRange = insertTimestamp(date: date)
+        return DelayedSelectionTimestampInsertion(
+            cursorRange: cursorRange,
+            pendingSelectionInsertion: PendingSelectionInsertion(
+                revision: revision,
+                documentAfterTimestamp: RichTextDocument.copy(document),
+                insertionRange: cursorRange
+            )
+        )
+    }
+
+    @discardableResult
+    public func insertSelectedText(
+        _ selectedText: String?,
+        for pendingInsertion: PendingSelectionInsertion
+    ) -> NSRange? {
+        guard let selectedText,
+              !selectedText.isEmpty,
+              revision == pendingInsertion.revision,
+              document.isEqual(to: pendingInsertion.documentAfterTimestamp),
+              pendingInsertion.insertionRange.length == 0,
+              pendingInsertion.insertionRange.location >= 0,
+              pendingInsertion.insertionRange.location <= document.length else {
+            return nil
+        }
+
+        let selectedBody = RichTextDocument.bodyText(selectedText)
+        let selectedRange = NSRange(
+            location: pendingInsertion.insertionRange.location,
+            length: selectedBody.length
+        )
+        let updatedDocument = NSMutableAttributedString(attributedString: document)
+        updatedDocument.insert(selectedBody, at: pendingInsertion.insertionRange.location)
+
+        document = updatedDocument
+        revision += 1
+        saveNow()
+        return selectedRange
     }
 
     public func saveNow() {

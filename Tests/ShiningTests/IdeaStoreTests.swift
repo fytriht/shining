@@ -142,6 +142,108 @@ final class IdeaStoreTests: XCTestCase {
         XCTAssertEqual(cursorRange.length, 0)
     }
 
+    func testDelayedSelectionTimestampInsertionReturnsCursorImmediately() throws {
+        let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = IdeaStore(fileURL: fileURL)
+        let insertion = store.insertTimestampForDelayedSelection(
+            date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40)
+        )
+        let expectedDocument = "# 2026-06-02 08:40\n\n"
+
+        XCTAssertEqual(store.document.string, expectedDocument)
+        XCTAssertEqual(insertion.cursorRange.location, expectedDocument.utf16.count)
+        XCTAssertEqual(insertion.cursorRange.length, 0)
+        XCTAssertNil(
+            store.insertSelectedText(nil, for: insertion.pendingSelectionInsertion)
+        )
+        XCTAssertEqual(store.document.string, expectedDocument)
+    }
+
+    func testPendingSelectionInsertionAddsCapturedText() throws {
+        let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = IdeaStore(fileURL: fileURL)
+        store.replaceDocument(NSAttributedString(string: "older idea"))
+
+        let insertion = store.insertTimestampForDelayedSelection(
+            date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40)
+        )
+        let selectedText = "captured idea"
+        let selectedRange = try XCTUnwrap(
+            store.insertSelectedText(
+                selectedText,
+                for: insertion.pendingSelectionInsertion
+            )
+        )
+        let timestampBlock = "# 2026-06-02 08:40\n\n"
+
+        XCTAssertEqual(
+            store.document.string,
+            "\(timestampBlock)\(selectedText)\n\nolder idea"
+        )
+        XCTAssertEqual(selectedRange.location, timestampBlock.utf16.count)
+        XCTAssertEqual(selectedRange.length, selectedText.utf16.count)
+        XCTAssertEqual(
+            (store.document.string as NSString).substring(with: selectedRange),
+            selectedText
+        )
+    }
+
+    func testPendingSelectionInsertionSkipsAfterUserEdit() throws {
+        let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = IdeaStore(fileURL: fileURL)
+        let insertion = store.insertTimestampForDelayedSelection(
+            date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40)
+        )
+        let editedDocument = NSAttributedString(
+            string: "\(store.document.string)typed before capture"
+        )
+        store.replaceDocument(editedDocument)
+
+        XCTAssertNil(
+            store.insertSelectedText(
+                "captured idea",
+                for: insertion.pendingSelectionInsertion
+            )
+        )
+        XCTAssertEqual(store.document.string, editedDocument.string)
+    }
+
+    func testEarlierPendingSelectionDoesNotModifyAfterSecondTimestamp() throws {
+        let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = IdeaStore(fileURL: fileURL)
+        let date = makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40)
+        let firstInsertion = store.insertTimestampForDelayedSelection(date: date)
+        let secondInsertion = store.insertTimestampForDelayedSelection(date: date)
+
+        XCTAssertNil(
+            store.insertSelectedText(
+                "first capture",
+                for: firstInsertion.pendingSelectionInsertion
+            )
+        )
+
+        let selectedText = "second capture"
+        let selectedRange = try XCTUnwrap(
+            store.insertSelectedText(
+                selectedText,
+                for: secondInsertion.pendingSelectionInsertion
+            )
+        )
+        let timestampBlock = "# 2026-06-02 08:40\n\n"
+
+        XCTAssertEqual(store.document.string, "\(timestampBlock)\(selectedText)")
+        XCTAssertEqual(selectedRange.location, timestampBlock.utf16.count)
+        XCTAssertEqual(selectedRange.length, selectedText.utf16.count)
+    }
+
     func testConsecutiveTimestampsInsertInReverseOrder() throws {
         let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
         defer { try? FileManager.default.removeItem(at: directory) }

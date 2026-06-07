@@ -20,11 +20,9 @@ struct SystemSelectionService {
 
         let pasteboard = NSPasteboard.general
         let snapshot = PasteboardSnapshot(pasteboard: pasteboard)
-        pasteboard.clearContents()
-        let clearedChangeCount = pasteboard.changeCount
+        let originalChangeCount = pasteboard.changeCount
 
         guard postCopyShortcut(to: targetApplication) else {
-            snapshot.restore(to: pasteboard)
             completion(nil)
             return
         }
@@ -32,7 +30,7 @@ struct SystemSelectionService {
         PasteboardTextPoller(
             pasteboard: pasteboard,
             snapshot: snapshot,
-            changeCount: clearedChangeCount,
+            changeCount: originalChangeCount,
             timeout: Self.copyTimeout,
             interval: Self.pollingInterval,
             completion: completion
@@ -166,22 +164,23 @@ private final class PasteboardTextPoller {
     }
 
     private func poll() {
-        if pasteboard.changeCount != changeCount,
-           let text = pasteboard.string(forType: .string),
-           !text.isEmpty {
-            finish(text)
+        if pasteboard.changeCount != changeCount {
+            let text = pasteboard.string(forType: .string)
+            finish(text?.isEmpty == false ? text : nil, restorePasteboard: true)
             return
         }
 
         if Date() >= deadline {
-            finish(nil)
+            finish(nil, restorePasteboard: false)
         }
     }
 
-    private func finish(_ text: String?) {
+    private func finish(_ text: String?, restorePasteboard: Bool) {
         timer?.invalidate()
         timer = nil
-        snapshot.restore(to: pasteboard)
+        if restorePasteboard {
+            snapshot.restore(to: pasteboard)
+        }
 
         let completion = self.completion
         retainedSelf = nil
