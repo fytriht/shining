@@ -71,7 +71,7 @@ if [[ -n "$CODESIGN_IDENTITY" && "$CODESIGN_IDENTITY" != "-" ]]; then
     --force
     --deep
     --options runtime
-    --timestamp
+    --timestamp=none
     --sign "$CODESIGN_IDENTITY"
   )
 

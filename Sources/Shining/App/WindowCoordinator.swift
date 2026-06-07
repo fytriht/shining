@@ -44,7 +44,17 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
     }
 
     func showEditorAndInsertTimestamp() {
-        let selectedText = NSApp.isActive ? nil : systemSelectionService.selectedText()
+        if NSApp.isActive {
+            showEditorAndInsertTimestamp(selectedText: nil)
+            return
+        }
+
+        systemSelectionService.selectedText { [weak self] selectedText in
+            self?.showEditorAndInsertTimestamp(selectedText: selectedText)
+        }
+    }
+
+    private func showEditorAndInsertTimestamp(selectedText: String?) {
         let cursorRange = store.insertTimestamp(selectedText: selectedText)
         showMainWindow(focusRange: cursorRange, cleanUpBeforeShowing: false)
     }

@@ -11,28 +11,32 @@ struct SystemSelectionService {
         _ = canPostSyntheticEvents()
     }
 
-    func selectedText() -> String? {
+    func selectedText(completion: @escaping (String?) -> Void) {
         guard let targetApplication = NSWorkspace.shared.frontmostApplication,
               targetApplication.processIdentifier != ProcessInfo.processInfo.processIdentifier else {
-            return nil
+            completion(nil)
+            return
         }
 
         let pasteboard = NSPasteboard.general
         let snapshot = PasteboardSnapshot(pasteboard: pasteboard)
         pasteboard.clearContents()
         let clearedChangeCount = pasteboard.changeCount
-        defer {
-            snapshot.restore(to: pasteboard)
-        }
 
         guard postCopyShortcut(to: targetApplication) else {
-            return nil
+            snapshot.restore(to: pasteboard)
+            completion(nil)
+            return
         }
 
-        return waitForCopiedText(
-            from: pasteboard,
-            after: clearedChangeCount
-        )
+        PasteboardTextPoller(
+            pasteboard: pasteboard,
+            snapshot: snapshot,
+            changeCount: clearedChangeCount,
+            timeout: Self.copyTimeout,
+            interval: Self.pollingInterval,
+            completion: completion
+        ).start()
     }
 
     private static func canPostSyntheticEvents() -> Bool {
@@ -89,38 +93,20 @@ struct SystemSelectionService {
         return true
     }
 
-    private func waitForCopiedText(
-        from pasteboard: NSPasteboard,
-        after changeCount: Int
-    ) -> String? {
-        let deadline = Date().addingTimeInterval(Self.copyTimeout)
-
-        while Date() < deadline {
-            if pasteboard.changeCount != changeCount,
-               let text = pasteboard.string(forType: .string),
-               !text.isEmpty {
-                return text
-            }
-
-            Thread.sleep(forTimeInterval: Self.pollingInterval)
-        }
-
-        return nil
-    }
 }
 
 private struct PasteboardSnapshot {
-    private let items: [[NSPasteboard.PasteboardType: Data]]
+    private typealias StoredItem = [(type: NSPasteboard.PasteboardType, data: Data)]
+
+    private let items: [StoredItem]
 
     init(pasteboard: NSPasteboard) {
         self.items = pasteboard.pasteboardItems?.map { item in
-            var storedItem: [NSPasteboard.PasteboardType: Data] = [:]
-            for type in item.types {
-                if let data = item.data(forType: type) {
-                    storedItem[type] = data
+            item.types.compactMap { type in
+                item.data(forType: type).map { data in
+                    (type: type, data: data)
                 }
             }
-            return storedItem
         } ?? []
     }
 
@@ -133,8 +119,8 @@ private struct PasteboardSnapshot {
             }
 
             let item = NSPasteboardItem()
-            for (type, data) in storedItem {
-                item.setData(data, forType: type)
+            for representation in storedItem {
+                item.setData(representation.data, forType: representation.type)
             }
             return item
         }
@@ -142,5 +128,63 @@ private struct PasteboardSnapshot {
         if !restoredItems.isEmpty {
             _ = pasteboard.writeObjects(restoredItems)
         }
+    }
+}
+
+private final class PasteboardTextPoller {
+    private let pasteboard: NSPasteboard
+    private let snapshot: PasteboardSnapshot
+    private let changeCount: Int
+    private let deadline: Date
+    private let interval: TimeInterval
+    private let completion: (String?) -> Void
+    private var timer: Timer?
+    private var retainedSelf: PasteboardTextPoller?
+
+    init(
+        pasteboard: NSPasteboard,
+        snapshot: PasteboardSnapshot,
+        changeCount: Int,
+        timeout: TimeInterval,
+        interval: TimeInterval,
+        completion: @escaping (String?) -> Void
+    ) {
+        self.pasteboard = pasteboard
+        self.snapshot = snapshot
+        self.changeCount = changeCount
+        self.deadline = Date().addingTimeInterval(timeout)
+        self.interval = interval
+        self.completion = completion
+    }
+
+    func start() {
+        retainedSelf = self
+        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            self?.poll()
+        }
+        poll()
+    }
+
+    private func poll() {
+        if pasteboard.changeCount != changeCount,
+           let text = pasteboard.string(forType: .string),
+           !text.isEmpty {
+            finish(text)
+            return
+        }
+
+        if Date() >= deadline {
+            finish(nil)
+        }
+    }
+
+    private func finish(_ text: String?) {
+        timer?.invalidate()
+        timer = nil
+        snapshot.restore(to: pasteboard)
+
+        let completion = self.completion
+        retainedSelf = nil
+        completion(text)
     }
 }
