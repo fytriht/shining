@@ -382,6 +382,70 @@ final class IdeaStoreTests: XCTestCase {
         )
     }
 
+    func testNewlineInsertionAtTimestampLineEndIsUserEditable() throws {
+        let timestamp = "# 2026-06-02 08:40"
+        let document = NSAttributedString(string: "\(timestamp)\n\nbody")
+
+        XCTAssertTrue(
+            RichTextDocument.isTimestampLineContentEnd(
+                timestamp.utf16.count,
+                in: document
+            )
+        )
+        XCTAssertTrue(
+            RichTextDocument.isUserEditableRange(
+                NSRange(location: timestamp.utf16.count, length: 0),
+                replacementString: "\n",
+                in: document
+            )
+        )
+        XCTAssertFalse(
+            RichTextDocument.isUserEditableRange(
+                NSRange(location: timestamp.utf16.count, length: 0),
+                replacementString: "x",
+                in: document
+            )
+        )
+        XCTAssertFalse(
+            RichTextDocument.isTimestampLineContentEnd(
+                2,
+                in: document
+            )
+        )
+        XCTAssertFalse(
+            RichTextDocument.isUserEditableRange(
+                NSRange(location: 2, length: 0),
+                replacementString: "\n",
+                in: document
+            )
+        )
+    }
+
+    func testNewlineInsertionAtUnterminatedTimestampLineEndIsUserEditable() throws {
+        let timestamp = "# 2026-06-02 08:40"
+        let document = NSAttributedString(string: timestamp)
+
+        XCTAssertTrue(
+            RichTextDocument.isTimestampLineContentEnd(
+                timestamp.utf16.count,
+                in: document
+            )
+        )
+        XCTAssertTrue(
+            RichTextDocument.isUserEditableRange(
+                NSRange(location: timestamp.utf16.count, length: 0),
+                replacementString: "\n",
+                in: document
+            )
+        )
+        XCTAssertFalse(
+            RichTextDocument.isUserEditableRange(
+                NSRange(location: timestamp.utf16.count, length: 0),
+                in: document
+            )
+        )
+    }
+
     func testTimestampSeparatorAndBodyRangesAreUserEditable() throws {
         let timestamp = "# 2026-06-02 08:40"
         let document = NSAttributedString(string: "\(timestamp)\n\nbody")

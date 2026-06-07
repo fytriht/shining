@@ -27,6 +27,41 @@ public enum RichTextDocument {
         }
     }
 
+    public static func isUserEditableRange(
+        _ range: NSRange,
+        replacementString: String?,
+        in document: NSAttributedString
+    ) -> Bool {
+        if replacementString == "" {
+            return isUserDeletableRange(range, in: document)
+        }
+
+        guard isValidRange(range, in: document) else {
+            return false
+        }
+
+        if replacementString == "\n",
+           range.length == 0,
+           isTimestampLineContentEnd(range.location, in: document) {
+            return true
+        }
+
+        return isUserEditableRange(range, in: document)
+    }
+
+    public static func isTimestampLineContentEnd(
+        _ location: Int,
+        in document: NSAttributedString
+    ) -> Bool {
+        guard location >= 0, location <= document.length else {
+            return false
+        }
+
+        return findTimestampLines(in: document).contains {
+            $0.contentRange.endLocation == location
+        }
+    }
+
     public static func isUserDeletableRange(
         _ range: NSRange,
         in document: NSAttributedString

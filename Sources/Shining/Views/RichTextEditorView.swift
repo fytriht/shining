@@ -102,6 +102,7 @@ struct RichTextEditorView: NSViewRepresentable {
         var appliedRevision: Int
         var appliedFocusRequestID: Int
         var isApplyingExternalChange = false
+        private var resetsTypingAttributesAfterChange = false
 
         init(_ parent: RichTextEditorView) {
             self.parent = parent
@@ -114,33 +115,44 @@ struct RichTextEditorView: NSViewRepresentable {
             shouldChangeTextIn affectedCharRange: NSRange,
             replacementString: String?
         ) -> Bool {
+            resetsTypingAttributesAfterChange = false
             guard !isApplyingExternalChange,
                   let textStorage = textView.textStorage else {
                 return true
             }
 
             let document = NSAttributedString(attributedString: textStorage)
-            if replacementString == "" {
-                return RichTextDocument.isUserDeletableRange(
-                    affectedCharRange,
-                    in: document
-                )
-            }
-
-            return RichTextDocument.isUserEditableRange(
+            let isEditable = RichTextDocument.isUserEditableRange(
                 affectedCharRange,
+                replacementString: replacementString,
                 in: document
             )
+            resetsTypingAttributesAfterChange = isEditable &&
+                replacementString == "\n" &&
+                affectedCharRange.length == 0 &&
+                RichTextDocument.isTimestampLineContentEnd(
+                    affectedCharRange.location,
+                    in: document
+                )
+            return isEditable
         }
 
         func textDidChange(_ notification: Notification) {
-            guard !isApplyingExternalChange,
-                  let textView = notification.object as? RichTextView,
+            guard !isApplyingExternalChange else {
+                resetsTypingAttributesAfterChange = false
+                return
+            }
+            guard let textView = notification.object as? RichTextView,
                   let textStorage = textView.textStorage else {
+                resetsTypingAttributesAfterChange = false
                 return
             }
 
             textView.constrainImageAttachmentsToTextWidth()
+            if resetsTypingAttributesAfterChange {
+                textView.typingAttributes = RichTextView.defaultTypingAttributes
+            }
+            resetsTypingAttributesAfterChange = false
             parent.onChange(NSAttributedString(attributedString: textStorage))
         }
     }
