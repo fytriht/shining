@@ -123,6 +123,37 @@ public enum RichTextDocument {
             .lineRange
     }
 
+    public static func caretRangeAvoidingTimestampContent(
+        _ range: NSRange,
+        in document: NSAttributedString
+    ) -> NSRange {
+        guard range.length == 0,
+              isValidRange(range, in: document) else {
+            return range
+        }
+
+        let timestampLines = findTimestampLines(in: document)
+        guard let timestampLineIndex = timestampLines.firstIndex(where: {
+            NSLocationInRange(range.location, $0.contentRange)
+        }) else {
+            return range
+        }
+
+        let nextTimestampLine: TimestampLine?
+        if timestampLineIndex < timestampLines.index(before: timestampLines.endIndex) {
+            nextTimestampLine = timestampLines[timestampLines.index(after: timestampLineIndex)]
+        } else {
+            nextTimestampLine = nil
+        }
+
+        let location = caretRedirectLocation(
+            for: timestampLines[timestampLineIndex],
+            before: nextTimestampLine,
+            in: document.string as NSString
+        )
+        return NSRange(location: location, length: 0)
+    }
+
     public static func cleaned(_ document: NSAttributedString) -> NSAttributedString {
         let timestampLines = findTimestampLines(in: document)
         guard !timestampLines.isEmpty else {
@@ -280,6 +311,58 @@ public enum RichTextDocument {
         }
 
         return CharacterSet.whitespacesAndNewlines.contains(scalar)
+    }
+
+    private static func caretRedirectLocation(
+        for timestampLine: TimestampLine,
+        before nextTimestampLine: TimestampLine?,
+        in string: NSString
+    ) -> Int {
+        let firstEditableLocation = timestampLine.lineRange.endLocation
+        let blockEndLocation = nextTimestampLine?.lineRange.location ?? string.length
+        var candidateLocation = firstEditableLocation
+
+        while candidateLocation < blockEndLocation {
+            var lineStart = 0
+            var lineEnd = 0
+            var contentsEnd = 0
+            string.getLineStart(
+                &lineStart,
+                end: &lineEnd,
+                contentsEnd: &contentsEnd,
+                for: NSRange(location: candidateLocation, length: 0)
+            )
+
+            let contentRange = NSRange(
+                location: lineStart,
+                length: contentsEnd - lineStart
+            )
+            guard isWhitespaceOnly(string, in: contentRange),
+                  lineEnd <= blockEndLocation else {
+                break
+            }
+
+            candidateLocation = max(lineEnd, candidateLocation + 1)
+        }
+
+        if nextTimestampLine != nil, candidateLocation >= blockEndLocation {
+            return min(firstEditableLocation, string.length)
+        }
+
+        return min(candidateLocation, string.length)
+    }
+
+    private static func isWhitespaceOnly(_ string: NSString, in range: NSRange) -> Bool {
+        guard range.length > 0 else {
+            return true
+        }
+
+        for location in range.location..<range.endLocation {
+            if !isWhitespace(string.character(at: location)) {
+                return false
+            }
+        }
+        return true
     }
 
     private static func isValidRange(

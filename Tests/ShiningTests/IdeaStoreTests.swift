@@ -514,6 +514,116 @@ final class IdeaStoreTests: XCTestCase {
         )
     }
 
+    func testCaretInsideTimestampContentMovesToBodyStart() throws {
+        let timestamp = "2026-06-02 08:40"
+        let document = NSAttributedString(string: "\(timestamp)\n\nbody")
+        let bodyLocation = (document.string as NSString).range(of: "body").location
+
+        XCTAssertEqual(
+            RichTextDocument.caretRangeAvoidingTimestampContent(
+                NSRange(location: 0, length: 0),
+                in: document
+            ),
+            NSRange(location: bodyLocation, length: 0)
+        )
+        XCTAssertEqual(
+            RichTextDocument.caretRangeAvoidingTimestampContent(
+                NSRange(location: 7, length: 0),
+                in: document
+            ),
+            NSRange(location: bodyLocation, length: 0)
+        )
+    }
+
+    func testCaretInsideTimestampWithoutBodyMovesAfterTimestampLine() throws {
+        let timestamp = "2026-06-02 08:40"
+        let document = NSAttributedString(string: timestamp)
+
+        XCTAssertEqual(
+            RichTextDocument.caretRangeAvoidingTimestampContent(
+                NSRange(location: 3, length: 0),
+                in: document
+            ),
+            NSRange(location: timestamp.utf16.count, length: 0)
+        )
+    }
+
+    func testCaretRangeOutsideTimestampContentIsUnchanged() throws {
+        let timestamp = "2026-06-02 08:40"
+        let document = NSAttributedString(string: "\(timestamp)\n\nbody")
+        let bodyLocation = (document.string as NSString).range(of: "body").location
+        let hashPrefixedDocument = NSAttributedString(string: "# \(timestamp)\n\nbody")
+
+        XCTAssertEqual(
+            RichTextDocument.caretRangeAvoidingTimestampContent(
+                NSRange(location: bodyLocation, length: 0),
+                in: document
+            ),
+            NSRange(location: bodyLocation, length: 0)
+        )
+        XCTAssertEqual(
+            RichTextDocument.caretRangeAvoidingTimestampContent(
+                NSRange(location: 0, length: 0),
+                in: RichTextDocument.empty()
+            ),
+            NSRange(location: 0, length: 0)
+        )
+        XCTAssertEqual(
+            RichTextDocument.caretRangeAvoidingTimestampContent(
+                NSRange(location: 2, length: 0),
+                in: hashPrefixedDocument
+            ),
+            NSRange(location: 2, length: 0)
+        )
+    }
+
+    func testNonCollapsedSelectionInsideTimestampContentIsUnchanged() throws {
+        let timestamp = "2026-06-02 08:40"
+        let document = NSAttributedString(string: "\(timestamp)\n\nbody")
+        let selectedRange = NSRange(location: 2, length: 4)
+
+        XCTAssertEqual(
+            RichTextDocument.caretRangeAvoidingTimestampContent(
+                selectedRange,
+                in: document
+            ),
+            selectedRange
+        )
+    }
+
+    func testCaretInsideMultipleTimestampContentsMovesToMatchingBodyStart() throws {
+        let documentString = [
+            "2026-06-02 08:41",
+            "",
+            "newer",
+            "",
+            "2026-06-02 08:40",
+            "",
+            "older"
+        ].joined(separator: "\n")
+        let document = NSAttributedString(string: documentString)
+        let string = documentString as NSString
+        let firstTimestampLocation = string.range(of: "2026-06-02 08:41").location
+        let secondTimestampLocation = string.range(of: "2026-06-02 08:40").location
+        let newerLocation = string.range(of: "newer").location
+        let olderLocation = string.range(of: "older").location
+
+        XCTAssertEqual(
+            RichTextDocument.caretRangeAvoidingTimestampContent(
+                NSRange(location: firstTimestampLocation + 4, length: 0),
+                in: document
+            ),
+            NSRange(location: newerLocation, length: 0)
+        )
+        XCTAssertEqual(
+            RichTextDocument.caretRangeAvoidingTimestampContent(
+                NSRange(location: secondTimestampLocation + 4, length: 0),
+                in: document
+            ),
+            NSRange(location: olderLocation, length: 0)
+        )
+    }
+
     func testHashPrefixedTimestampFormatIsUserEditable() throws {
         let document = NSAttributedString(string: "# 2026-06-02 08:40\n\nbody")
 
