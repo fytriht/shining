@@ -32,7 +32,7 @@ struct MainEditorView: View {
         ) { document in
             store.replaceDocument(document)
         }
-            .padding(12)
+            .padding(0)
             .frame(minWidth: 520, minHeight: 360)
             .background(Color(nsColor: .textBackgroundColor))
     }
