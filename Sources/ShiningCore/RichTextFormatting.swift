@@ -40,6 +40,8 @@ public enum RichTextFormatting {
     public static var timestampParagraphStyle: NSParagraphStyle {
         let style = NSMutableParagraphStyle()
         style.alignment = .left
+        style.minimumLineHeight = 22
+        style.maximumLineHeight = 22
         return style.copy() as? NSParagraphStyle ?? style
     }
 }
