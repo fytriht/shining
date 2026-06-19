@@ -204,6 +204,10 @@ final class RichTextScrollView: NSScrollView {
 }
 
 final class RichTextView: NSTextView {
+    private static let imageDisplayScale: CGFloat = 0.5
+    private static let minimumImageAvailableWidth: CGFloat = 120
+    private static let imageHorizontalPadding: CGFloat = 8
+
     static var defaultTypingAttributes: [NSAttributedString.Key: Any] {
         RichTextFormatting.bodyAttributes
     }
@@ -290,17 +294,25 @@ final class RichTextView: NSTextView {
             return
         }
 
-        let availableWidth = max(120, bounds.width - textContainerInset.width * 2 - 8)
-        var didChangeAttachmentBounds = false
+        let availableWidth = imageAttachmentAvailableWidth
+        var didChangeAttachmentLayout = false
+        var didChangeAttachmentDisplay = false
         let fullRange = NSRange(location: 0, length: textStorage.length)
 
         textStorage.enumerateAttribute(.attachment, in: fullRange) { value, _, _ in
             guard let attachment = value as? NSTextAttachment,
-                  let imageSize = intrinsicImageSize(for: attachment) else {
+                  let imageSize = Self.imageSize(for: attachment) else {
                 return
             }
 
-            let scale = min(1, availableWidth / imageSize.width)
+            if !(attachment.attachmentCell is RoundedImageAttachmentCell) {
+                let cell = RoundedImageAttachmentCell()
+                cell.attachment = attachment
+                attachment.attachmentCell = cell
+                didChangeAttachmentDisplay = true
+            }
+
+            let scale = min(Self.imageDisplayScale, availableWidth / imageSize.width)
             let newBounds = NSRect(
                 x: 0,
                 y: 0,
@@ -308,13 +320,21 @@ final class RichTextView: NSTextView {
                 height: imageSize.height * scale
             )
 
-            if attachment.bounds.size != newBounds.size {
+            if attachment.bounds != newBounds {
                 attachment.bounds = newBounds
-                didChangeAttachmentBounds = true
+                didChangeAttachmentLayout = true
+                didChangeAttachmentDisplay = true
             }
         }
 
-        if didChangeAttachmentBounds {
+        if didChangeAttachmentLayout {
+            layoutManager?.invalidateLayout(
+                forCharacterRange: fullRange,
+                actualCharacterRange: nil
+            )
+        }
+
+        if didChangeAttachmentDisplay {
             layoutManager?.invalidateDisplay(forCharacterRange: fullRange)
         }
     }
@@ -583,35 +603,52 @@ final class RichTextView: NSTextView {
     }
 
     private func scaledBounds(for imageSize: NSSize) -> NSRect {
-        let availableWidth = max(120, bounds.width - textContainerInset.width * 2 - 8)
-        guard imageSize.width > availableWidth else {
-            return NSRect(origin: .zero, size: imageSize)
+        guard imageSize.width > 0, imageSize.height > 0 else {
+            return .zero
         }
 
-        let scale = availableWidth / imageSize.width
+        let scale = min(Self.imageDisplayScale, imageAttachmentAvailableWidth / imageSize.width)
         return NSRect(
             x: 0,
             y: 0,
-            width: availableWidth,
+            width: imageSize.width * scale,
             height: imageSize.height * scale
         )
     }
 
-    private func intrinsicImageSize(for attachment: NSTextAttachment) -> NSSize? {
+    private var imageAttachmentAvailableWidth: CGFloat {
+        max(
+            Self.minimumImageAvailableWidth,
+            bounds.width - textContainerInset.width * 2 - Self.imageHorizontalPadding
+        )
+    }
+
+    fileprivate static func image(for attachment: NSTextAttachment) -> NSImage? {
         if let image = attachment.image {
-            return image.size
+            return image
+        }
+
+        if let contents = attachment.contents,
+           let image = NSImage(data: contents) {
+            return image
         }
 
         if let contents = attachment.fileWrapper?.regularFileContents,
            let image = NSImage(data: contents) {
-            return image.size
-        }
-
-        if attachment.bounds.size.width > 0, attachment.bounds.size.height > 0 {
-            return attachment.bounds.size
+            return image
         }
 
         return nil
+    }
+
+    private static func imageSize(for attachment: NSTextAttachment) -> NSSize? {
+        guard let size = image(for: attachment)?.size,
+              size.width > 0,
+              size.height > 0 else {
+            return nil
+        }
+
+        return size
     }
 
     private var imagePasteboardTypes: [NSPasteboard.PasteboardType] {
@@ -627,5 +664,61 @@ final class RichTextView: NSTextView {
     private struct PasteboardImageAttachment {
         let attachment: NSTextAttachment
         let sourceURL: URL?
+    }
+}
+
+private final class RoundedImageAttachmentCell: NSTextAttachmentCell {
+    private static let cornerRadius: CGFloat = 6
+    private static let borderWidth: CGFloat = 1
+
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
+        guard let attachment,
+              let image = RichTextView.image(for: attachment) else {
+            super.draw(withFrame: cellFrame, in: controlView)
+            return
+        }
+
+        let radius = min(Self.cornerRadius, min(cellFrame.width, cellFrame.height) / 2)
+        let clipPath = NSBezierPath(
+            roundedRect: cellFrame,
+            xRadius: radius,
+            yRadius: radius
+        )
+
+        NSGraphicsContext.saveGraphicsState()
+        clipPath.addClip()
+        image.draw(
+            in: cellFrame,
+            from: NSRect(origin: .zero, size: image.size),
+            operation: .sourceOver,
+            fraction: 1,
+            respectFlipped: true,
+            hints: nil
+        )
+        NSGraphicsContext.restoreGraphicsState()
+
+        let strokeFrame = cellFrame.insetBy(
+            dx: Self.borderWidth / 2,
+            dy: Self.borderWidth / 2
+        )
+        let strokeRadius = max(0, radius - Self.borderWidth / 2)
+        let strokePath = NSBezierPath(
+            roundedRect: strokeFrame,
+            xRadius: strokeRadius,
+            yRadius: strokeRadius
+        )
+        strokePath.lineWidth = Self.borderWidth
+        NSColor.separatorColor.withAlphaComponent(0.35).setStroke()
+        strokePath.stroke()
+    }
+
+    override func cellSize() -> NSSize {
+        guard let attachment,
+              attachment.bounds.width > 0,
+              attachment.bounds.height > 0 else {
+            return super.cellSize()
+        }
+
+        return attachment.bounds.size
     }
 }
