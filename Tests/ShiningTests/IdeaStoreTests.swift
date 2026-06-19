@@ -20,7 +20,7 @@ final class IdeaStoreTests: XCTestCase {
         let cursorRange = store.insertTimestamp(
             date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40)
         )
-        let expectedDocument = "2026-06-02 08:40\n\n"
+        let expectedDocument = "2026-06-02 08:40\n"
 
         XCTAssertEqual(store.document.string, expectedDocument)
         XCTAssertEqual(cursorRange.location, expectedDocument.utf16.count)
@@ -29,10 +29,6 @@ final class IdeaStoreTests: XCTestCase {
         XCTAssertEqual(store.savedTimestampBlockCount, 1)
 
         try assertUsesTimestampAttributes(store.document, at: 0)
-        try assertUsesBodyAttributes(
-            store.document,
-            in: NSRange(location: expectedDocument.utf16.count - 1, length: 1)
-        )
     }
 
     func testExistingDocumentInsertsTimestampAboveContentAndReturnsBodyStart() throws {
@@ -45,7 +41,7 @@ final class IdeaStoreTests: XCTestCase {
         let cursorRange = store.insertTimestamp(
             date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40)
         )
-        let timestampBlock = "2026-06-02 08:40\n\n"
+        let timestampBlock = "2026-06-02 08:40\n"
 
         XCTAssertEqual(
             store.document.string,
@@ -69,7 +65,7 @@ final class IdeaStoreTests: XCTestCase {
             date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40),
             selectedText: selectedText
         )
-        let timestampBlock = "2026-06-02 08:40\n\n"
+        let timestampBlock = "2026-06-02 08:40\n"
 
         XCTAssertEqual(store.document.string, "\(timestampBlock)\(selectedText)")
         XCTAssertEqual(cursorRange.location, timestampBlock.utf16.count)
@@ -94,7 +90,7 @@ final class IdeaStoreTests: XCTestCase {
             date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40),
             selectedText: selectedText
         )
-        let timestampBlock = "2026-06-02 08:40\n\n"
+        let timestampBlock = "2026-06-02 08:40\n"
 
         XCTAssertEqual(
             store.document.string,
@@ -118,7 +114,7 @@ final class IdeaStoreTests: XCTestCase {
             date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40),
             selectedText: selectedText
         )
-        let timestampBlock = "2026-06-02 08:40\n\n"
+        let timestampBlock = "2026-06-02 08:40\n"
 
         XCTAssertEqual(store.document.string, "\(timestampBlock)\(selectedText)")
         XCTAssertEqual(cursorRange.location, timestampBlock.utf16.count)
@@ -140,7 +136,7 @@ final class IdeaStoreTests: XCTestCase {
             date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40),
             selectedText: selectedText
         )
-        let timestampBlock = "2026-06-02 08:40\n\n"
+        let timestampBlock = "2026-06-02 08:40\n"
 
         XCTAssertEqual(store.document.string, "\(timestampBlock)\(trimmedText)")
         XCTAssertEqual(cursorRange.location, timestampBlock.utf16.count)
@@ -161,7 +157,7 @@ final class IdeaStoreTests: XCTestCase {
             date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40),
             selectedText: ""
         )
-        let expectedDocument = "2026-06-02 08:40\n\n"
+        let expectedDocument = "2026-06-02 08:40\n"
 
         XCTAssertEqual(store.document.string, expectedDocument)
         XCTAssertEqual(cursorRange.location, expectedDocument.utf16.count)
@@ -176,7 +172,7 @@ final class IdeaStoreTests: XCTestCase {
         let insertion = store.insertTimestampForDelayedSelection(
             date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40)
         )
-        let expectedDocument = "2026-06-02 08:40\n\n"
+        let expectedDocument = "2026-06-02 08:40\n"
 
         XCTAssertEqual(store.document.string, expectedDocument)
         XCTAssertEqual(insertion.cursorRange.location, expectedDocument.utf16.count)
@@ -204,7 +200,7 @@ final class IdeaStoreTests: XCTestCase {
                 for: insertion.pendingSelectionInsertion
             )
         )
-        let timestampBlock = "2026-06-02 08:40\n\n"
+        let timestampBlock = "2026-06-02 08:40\n"
 
         XCTAssertEqual(
             store.document.string,
@@ -234,7 +230,7 @@ final class IdeaStoreTests: XCTestCase {
                 for: insertion.pendingSelectionInsertion
             )
         )
-        let timestampBlock = "2026-06-02 08:40\n\n"
+        let timestampBlock = "2026-06-02 08:40\n"
 
         XCTAssertEqual(store.document.string, "\(timestampBlock)\(trimmedText)")
         XCTAssertEqual(selectedRange.location, timestampBlock.utf16.count)
@@ -259,7 +255,7 @@ final class IdeaStoreTests: XCTestCase {
                 for: insertion.pendingSelectionInsertion
             )
         )
-        let timestampBlock = "2026-06-02 08:40\n\n"
+        let timestampBlock = "2026-06-02 08:40\n"
         let selectedText = "- A\n- B"
 
         XCTAssertEqual(store.document.string, "\(timestampBlock)\(selectedText)")
@@ -290,7 +286,7 @@ final class IdeaStoreTests: XCTestCase {
                 for: insertion.pendingSelectionInsertion
             )
         )
-        let timestampBlock = "2026-06-02 08:40\n\n"
+        let timestampBlock = "2026-06-02 08:40\n"
         let selectedText = "- A\n- B"
 
         XCTAssertEqual(store.document.string, "\(timestampBlock)\(selectedText)")
@@ -348,9 +344,12 @@ final class IdeaStoreTests: XCTestCase {
                 for: secondInsertion.pendingSelectionInsertion
             )
         )
-        let timestampBlock = "2026-06-02 08:40\n\n"
+        let timestampBlock = "2026-06-02 08:40\n"
 
-        XCTAssertEqual(store.document.string, "\(timestampBlock)\(selectedText)")
+        XCTAssertEqual(
+            store.document.string,
+            "\(timestampBlock)\(selectedText)"
+        )
         XCTAssertEqual(selectedRange.location, timestampBlock.utf16.count)
         XCTAssertEqual(selectedRange.length, selectedText.utf16.count)
     }
@@ -366,7 +365,7 @@ final class IdeaStoreTests: XCTestCase {
         let cursorRange = store.insertTimestamp(
             date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 41)
         )
-        let latestTimestampBlock = "2026-06-02 08:41\n\n"
+        let latestTimestampBlock = "2026-06-02 08:41\n"
 
         XCTAssertEqual(
             store.document.string,
@@ -375,6 +374,27 @@ final class IdeaStoreTests: XCTestCase {
         XCTAssertEqual(cursorRange.location, latestTimestampBlock.utf16.count)
         XCTAssertEqual(cursorRange.length, 0)
         XCTAssertEqual(store.savedTimestampBlockCount, 1)
+    }
+
+    func testTimestampInsertPreservesExistingTimestampBlockSpacing() throws {
+        let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let existingDocument = "2026-06-02 08:39\nolder idea"
+        let store = IdeaStore(fileURL: fileURL)
+        store.replaceDocument(NSAttributedString(string: existingDocument))
+
+        let cursorRange = store.insertTimestamp(
+            date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40)
+        )
+        let timestampBlock = "2026-06-02 08:40\n"
+
+        XCTAssertEqual(
+            store.document.string,
+            "\(timestampBlock)\n\n\(existingDocument)"
+        )
+        XCTAssertEqual(cursorRange.location, timestampBlock.utf16.count)
+        XCTAssertEqual(cursorRange.length, 0)
     }
 
     func testSavedTimestampBlockCountUpdatesOnlyAfterSave() throws {
@@ -925,7 +945,7 @@ final class IdeaStoreTests: XCTestCase {
         XCTAssertTrue(store.cleanUpDocument(saveImmediately: true))
         XCTAssertEqual(
             store.document.string,
-            "2026-06-02 08:42\n\nkeep me\n\n2026-06-02 08:40\n\nolder"
+            "2026-06-02 08:42\nkeep me\n\n2026-06-02 08:40\nolder"
         )
         XCTAssertEqual(store.savedTimestampBlockCount, 2)
     }
@@ -941,7 +961,8 @@ final class IdeaStoreTests: XCTestCase {
         store.replaceDocument(document)
 
         XCTAssertTrue(store.cleanUpDocument(saveImmediately: true))
-        XCTAssertTrue(store.document.string.hasPrefix("2026-06-02 08:40\n\n"))
+        XCTAssertTrue(store.document.string.hasPrefix("2026-06-02 08:40\n"))
+        XCTAssertFalse(store.document.string.hasPrefix("2026-06-02 08:40\n\n"))
         XCTAssertFalse(store.document.string.contains("2026-06-02 08:39"))
         XCTAssertTrue(containsAttachment(store.document))
     }
@@ -969,7 +990,7 @@ final class IdeaStoreTests: XCTestCase {
         XCTAssertEqual(store.revision, 1)
 
         let reloaded = IdeaStore(fileURL: fileURL)
-        XCTAssertEqual(reloaded.document.string, "2026-06-02 08:40\n\nidea")
+        XCTAssertEqual(reloaded.document.string, "2026-06-02 08:40\nidea")
     }
 
     func testStorePersistsRTFDText() throws {
@@ -1009,7 +1030,7 @@ final class IdeaStoreTests: XCTestCase {
         let cursorRange = store.insertTimestamp(
             date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40)
         )
-        let timestampBlock = "2026-06-02 08:40\n\n"
+        let timestampBlock = "2026-06-02 08:40\n"
 
         XCTAssertTrue(store.document.string.hasPrefix("\(timestampBlock)\n\nimage:\n"))
         XCTAssertEqual(cursorRange.location, timestampBlock.utf16.count)

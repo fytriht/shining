@@ -192,7 +192,7 @@ public enum RichTextDocument {
 
             let block = NSMutableAttributedString()
             block.append(document.attributedSubstring(from: timestampLine.contentRange))
-            block.append(bodyText("\n\n"))
+            block.append(bodyText("\n"))
             block.append(body)
             appendSection(block, to: result)
         }
@@ -558,12 +558,10 @@ public enum IdeaTimestampInserter {
     }
 
     private static func timestampLine(_ timestamp: String) -> NSAttributedString {
-        let result = NSMutableAttributedString(
+        NSAttributedString(
             string: "\(timestamp)\n",
             attributes: RichTextFormatting.timestampAttributes
         )
-        result.append(RichTextDocument.bodyText("\n"))
-        return result
     }
 }
 
