@@ -1149,6 +1149,19 @@ private func assertUsesTimestampAttributes(
     XCTAssertEqual(paragraphStyle.maximumLineHeight, 22, accuracy: 0.001, file: file, line: line)
     XCTAssertEqual(paragraphStyle.paragraphSpacingBefore, 0, accuracy: 0.001, file: file, line: line)
     XCTAssertEqual(paragraphStyle.paragraphSpacing, 0, accuracy: 0.001, file: file, line: line)
+
+    let baselineOffset = try XCTUnwrap(
+        document.attribute(.baselineOffset, at: location, effectiveRange: nil) as? CGFloat,
+        file: file,
+        line: line
+    )
+    XCTAssertEqual(
+        baselineOffset,
+        RichTextFormatting.timestampBaselineOffset,
+        accuracy: 0.001,
+        file: file,
+        line: line
+    )
 }
 
 private func assertUsesBodyAttributes(

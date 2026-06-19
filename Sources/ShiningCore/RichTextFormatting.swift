@@ -14,7 +14,8 @@ public enum RichTextFormatting {
         [
             .font: timestampFont,
             .foregroundColor: NSColor.secondaryLabelColor,
-            .paragraphStyle: timestampParagraphStyle
+            .paragraphStyle: timestampParagraphStyle,
+            .baselineOffset: timestampBaselineOffset
         ]
     }
 
@@ -27,6 +28,11 @@ public enum RichTextFormatting {
             ofSize: NSFont.smallSystemFontSize,
             weight: .regular
         )
+    }
+
+    public static var timestampBaselineOffset: CGFloat {
+        let defaultLineHeight = NSLayoutManager().defaultLineHeight(for: timestampFont)
+        return max(0, (22 - defaultLineHeight) / 2)
     }
 
     public static var bodyParagraphStyle: NSParagraphStyle {
