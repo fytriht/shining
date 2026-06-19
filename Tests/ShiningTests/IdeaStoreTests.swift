@@ -1042,7 +1042,7 @@ private func assertUsesTimestampAttributes(
         file: file,
         line: line
     )
-    XCTAssertEqual(paragraphStyle.alignment, .center, file: file, line: line)
+    XCTAssertEqual(paragraphStyle.alignment, .left, file: file, line: line)
     XCTAssertEqual(paragraphStyle.paragraphSpacingBefore, 0, accuracy: 0.001, file: file, line: line)
     XCTAssertEqual(paragraphStyle.paragraphSpacing, 0, accuracy: 0.001, file: file, line: line)
 }

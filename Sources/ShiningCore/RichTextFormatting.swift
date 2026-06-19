@@ -39,7 +39,7 @@ public enum RichTextFormatting {
 
     public static var timestampParagraphStyle: NSParagraphStyle {
         let style = NSMutableParagraphStyle()
-        style.alignment = .center
+        style.alignment = .left
         return style.copy() as? NSParagraphStyle ?? style
     }
 }
