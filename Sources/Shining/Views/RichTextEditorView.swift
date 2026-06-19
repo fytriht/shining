@@ -195,6 +195,7 @@ struct RichTextEditorView: NSViewRepresentable {
             }
 
             let selectedRange = textView.selectedRange()
+            textView.invalidateImageAttachmentDisplay()
             let adjustedRange = RichTextDocument.caretRangeAvoidingTimestampContent(
                 selectedRange,
                 in: NSAttributedString(attributedString: textStorage)
@@ -341,12 +342,20 @@ final class RichTextView: NSTextView {
 
         let availableWidth = imageAttachmentAvailableWidth
         var didChangeAttachmentLayout = false
+        var didChangeAttachmentDisplay = false
         let fullRange = NSRange(location: 0, length: textStorage.length)
 
         textStorage.enumerateAttribute(.attachment, in: fullRange) { value, _, _ in
             guard let attachment = value as? NSTextAttachment,
                   let imageSize = Self.imageSize(for: attachment) else {
                 return
+            }
+
+            if !(attachment.attachmentCell is SelectableImageAttachmentCell) {
+                let cell = SelectableImageAttachmentCell()
+                cell.attachment = attachment
+                attachment.attachmentCell = cell
+                didChangeAttachmentDisplay = true
             }
 
             let scale = min(Self.imageDisplayScale, availableWidth / imageSize.width)
@@ -369,6 +378,37 @@ final class RichTextView: NSTextView {
                 actualCharacterRange: nil
             )
             layoutManager?.invalidateDisplay(forCharacterRange: fullRange)
+        } else if didChangeAttachmentDisplay {
+            layoutManager?.invalidateDisplay(forCharacterRange: fullRange)
+        }
+    }
+
+    func invalidateImageAttachmentDisplay() {
+        guard let textStorage,
+              let layoutManager,
+              let textContainer else {
+            return
+        }
+
+        let fullRange = NSRange(location: 0, length: textStorage.length)
+        textStorage.enumerateAttribute(.attachment, in: fullRange) { value, range, _ in
+            guard value is NSTextAttachment else {
+                return
+            }
+
+            layoutManager.ensureLayout(forCharacterRange: range)
+            let glyphRange = layoutManager.glyphRange(
+                forCharacterRange: range,
+                actualCharacterRange: nil
+            )
+            let containerRect = layoutManager.boundingRect(
+                forGlyphRange: glyphRange,
+                in: textContainer
+            )
+            let viewRect = containerRect
+                .offsetBy(dx: textContainerOrigin.x, dy: textContainerOrigin.y)
+                .insetBy(dx: -4, dy: -4)
+            setNeedsDisplay(viewRect)
         }
     }
 
@@ -769,5 +809,135 @@ final class RichTextView: NSTextView {
     private struct PasteboardImageAttachment {
         let attachment: NSTextAttachment
         let sourceURL: URL?
+    }
+}
+
+private final class SelectableImageAttachmentCell: NSTextAttachmentCell {
+    override func draw(
+        withFrame cellFrame: NSRect,
+        in controlView: NSView?,
+        characterIndex charIndex: Int,
+        layoutManager: NSLayoutManager
+    ) {
+        drawImage(withFrame: cellFrame, in: controlView)
+
+        if isSelected(characterIndex: charIndex, in: controlView) {
+            drawSelectionHighlight(withFrame: cellFrame, in: controlView)
+        }
+    }
+
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
+        drawImage(withFrame: cellFrame, in: controlView)
+
+        if isSelected(in: controlView) {
+            drawSelectionHighlight(withFrame: cellFrame, in: controlView)
+        }
+    }
+
+    override func highlight(_ flag: Bool, withFrame cellFrame: NSRect, in controlView: NSView?) {
+        guard flag else {
+            return
+        }
+
+        drawSelectionHighlight(withFrame: cellFrame, in: controlView)
+    }
+
+    override func cellSize() -> NSSize {
+        if let bounds = attachment?.bounds,
+           bounds.size.width > 0,
+           bounds.size.height > 0 {
+            return bounds.size
+        }
+
+        if let attachment,
+           let image = RichTextView.image(for: attachment) {
+            return image.size
+        }
+
+        return super.cellSize()
+    }
+
+    private func drawImage(withFrame cellFrame: NSRect, in controlView: NSView?) {
+        guard let attachment,
+              let image = RichTextView.image(for: attachment) else {
+            super.draw(withFrame: cellFrame, in: controlView)
+            return
+        }
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current?.imageInterpolation = .high
+        image.draw(
+            in: cellFrame,
+            from: .zero,
+            operation: .sourceOver,
+            fraction: 1,
+            respectFlipped: true,
+            hints: nil
+        )
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    private func isSelected(characterIndex: Int, in controlView: NSView?) -> Bool {
+        guard let textView = controlView as? NSTextView else {
+            return false
+        }
+
+        return textView.selectedRanges.contains { selectedRangeValue in
+            let selectedRange = selectedRangeValue.rangeValue
+            return selectedRange.length > 0 && NSLocationInRange(characterIndex, selectedRange)
+        }
+    }
+
+    private func isSelected(in controlView: NSView?) -> Bool {
+        guard let attachment,
+              let textView = controlView as? NSTextView,
+              let textStorage = textView.textStorage else {
+            return false
+        }
+
+        var isSelected = false
+        let fullRange = NSRange(location: 0, length: textStorage.length)
+        textStorage.enumerateAttribute(.attachment, in: fullRange) { value, range, stop in
+            guard let rangeAttachment = value as? NSTextAttachment,
+                  rangeAttachment === attachment else {
+                return
+            }
+
+            isSelected = textView.selectedRanges.contains { selectedRangeValue in
+                let selectedRange = selectedRangeValue.rangeValue
+                return selectedRange.length > 0 &&
+                    NSIntersectionRange(selectedRange, range).length > 0
+            }
+            stop.pointee = true
+        }
+        return isSelected
+    }
+
+    private func drawSelectionHighlight(withFrame cellFrame: NSRect, in controlView: NSView?) {
+        guard cellFrame.width > 2,
+              cellFrame.height > 2 else {
+            return
+        }
+
+        let selectionColor = selectionBackgroundColor(for: controlView)
+        let fillPath = NSBezierPath(rect: cellFrame)
+        let strokePath = NSBezierPath(rect: cellFrame.insetBy(dx: 1, dy: 1))
+
+        selectionColor.withAlphaComponent(0.16).setFill()
+        fillPath.fill()
+
+        selectionColor.withAlphaComponent(0.9).setStroke()
+        strokePath.lineWidth = 2
+        strokePath.stroke()
+    }
+
+    private func selectionBackgroundColor(for controlView: NSView?) -> NSColor {
+        guard let textView = controlView as? NSTextView,
+              textView.window?.isKeyWindow == true,
+              textView.window?.firstResponder === textView else {
+            return .unemphasizedSelectedContentBackgroundColor
+        }
+
+        return .selectedTextBackgroundColor
     }
 }
