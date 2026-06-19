@@ -341,20 +341,12 @@ final class RichTextView: NSTextView {
 
         let availableWidth = imageAttachmentAvailableWidth
         var didChangeAttachmentLayout = false
-        var didChangeAttachmentDisplay = false
         let fullRange = NSRange(location: 0, length: textStorage.length)
 
         textStorage.enumerateAttribute(.attachment, in: fullRange) { value, _, _ in
             guard let attachment = value as? NSTextAttachment,
                   let imageSize = Self.imageSize(for: attachment) else {
                 return
-            }
-
-            if !(attachment.attachmentCell is RoundedImageAttachmentCell) {
-                let cell = RoundedImageAttachmentCell()
-                cell.attachment = attachment
-                attachment.attachmentCell = cell
-                didChangeAttachmentDisplay = true
             }
 
             let scale = min(Self.imageDisplayScale, availableWidth / imageSize.width)
@@ -368,7 +360,6 @@ final class RichTextView: NSTextView {
             if attachment.bounds != newBounds {
                 attachment.bounds = newBounds
                 didChangeAttachmentLayout = true
-                didChangeAttachmentDisplay = true
             }
         }
 
@@ -377,9 +368,6 @@ final class RichTextView: NSTextView {
                 forCharacterRange: fullRange,
                 actualCharacterRange: nil
             )
-        }
-
-        if didChangeAttachmentDisplay {
             layoutManager?.invalidateDisplay(forCharacterRange: fullRange)
         }
     }
@@ -781,61 +769,5 @@ final class RichTextView: NSTextView {
     private struct PasteboardImageAttachment {
         let attachment: NSTextAttachment
         let sourceURL: URL?
-    }
-}
-
-private final class RoundedImageAttachmentCell: NSTextAttachmentCell {
-    private static let cornerRadius: CGFloat = 6
-    private static let borderWidth: CGFloat = 1
-
-    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
-        guard let attachment,
-              let image = RichTextView.image(for: attachment) else {
-            super.draw(withFrame: cellFrame, in: controlView)
-            return
-        }
-
-        let radius = min(Self.cornerRadius, min(cellFrame.width, cellFrame.height) / 2)
-        let clipPath = NSBezierPath(
-            roundedRect: cellFrame,
-            xRadius: radius,
-            yRadius: radius
-        )
-
-        NSGraphicsContext.saveGraphicsState()
-        clipPath.addClip()
-        image.draw(
-            in: cellFrame,
-            from: NSRect(origin: .zero, size: image.size),
-            operation: .sourceOver,
-            fraction: 1,
-            respectFlipped: true,
-            hints: nil
-        )
-        NSGraphicsContext.restoreGraphicsState()
-
-        let strokeFrame = cellFrame.insetBy(
-            dx: Self.borderWidth / 2,
-            dy: Self.borderWidth / 2
-        )
-        let strokeRadius = max(0, radius - Self.borderWidth / 2)
-        let strokePath = NSBezierPath(
-            roundedRect: strokeFrame,
-            xRadius: strokeRadius,
-            yRadius: strokeRadius
-        )
-        strokePath.lineWidth = Self.borderWidth
-        NSColor.separatorColor.withAlphaComponent(0.35).setStroke()
-        strokePath.stroke()
-    }
-
-    override func cellSize() -> NSSize {
-        guard let attachment,
-              attachment.bounds.width > 0,
-              attachment.bounds.height > 0 else {
-            return super.cellSize()
-        }
-
-        return attachment.bounds.size
     }
 }
