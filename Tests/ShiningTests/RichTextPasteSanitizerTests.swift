@@ -89,14 +89,37 @@ private func assertUsesDefaultTextAttributes(
         }
 
         XCTAssertNil(attributes[.link], file: file, line: line)
-        XCTAssertNil(attributes[.paragraphStyle], file: file, line: line)
-
-        let font = attributes[.font] as? NSFont
-        XCTAssertEqual(font?.pointSize, NSFont.systemFontSize, file: file, line: line)
+        guard let font = attributes[.font] as? NSFont else {
+            XCTFail("Missing body font", file: file, line: line)
+            return
+        }
+        XCTAssertEqual(font.pointSize, 14, accuracy: 0.001, file: file, line: line)
+        assertRegularFontWeight(font, file: file, line: line)
 
         let color = attributes[.foregroundColor] as? NSColor
         XCTAssertTrue(color?.isEqual(NSColor.labelColor) ?? false, file: file, line: line)
+
+        guard let paragraphStyle = attributes[.paragraphStyle] as? NSParagraphStyle else {
+            XCTFail("Missing body paragraph style", file: file, line: line)
+            return
+        }
+        XCTAssertEqual(paragraphStyle.minimumLineHeight, 22, accuracy: 0.001, file: file, line: line)
+        XCTAssertEqual(paragraphStyle.maximumLineHeight, 22, accuracy: 0.001, file: file, line: line)
+        XCTAssertEqual(paragraphStyle.paragraphSpacing, 7, accuracy: 0.001, file: file, line: line)
     }
+}
+
+private func assertRegularFontWeight(
+    _ font: NSFont,
+    file: StaticString,
+    line: UInt
+) {
+    guard let traits = font.fontDescriptor.object(forKey: .traits) as? [NSFontDescriptor.TraitKey: Any],
+          let weight = traits[.weight] as? CGFloat else {
+        XCTFail("Missing font weight", file: file, line: line)
+        return
+    }
+    XCTAssertEqual(weight, NSFont.Weight.regular.rawValue, accuracy: 0.001, file: file, line: line)
 }
 
 private func makeImageAttributedString() -> NSAttributedString {

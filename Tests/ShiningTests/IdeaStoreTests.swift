@@ -28,23 +28,11 @@ final class IdeaStoreTests: XCTestCase {
         XCTAssertTrue(store.hasContent)
         XCTAssertEqual(store.savedTimestampBlockCount, 1)
 
-        let font = try XCTUnwrap(store.document.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)
-        XCTAssertEqual(font.pointSize, 10)
-        let traits = try XCTUnwrap(
-            font.fontDescriptor.object(forKey: .traits) as? [NSFontDescriptor.TraitKey: Any]
+        try assertUsesTimestampAttributes(store.document, at: 0)
+        try assertUsesBodyAttributes(
+            store.document,
+            in: NSRange(location: expectedDocument.utf16.count - 1, length: 1)
         )
-        let weight = try XCTUnwrap(traits[.weight] as? CGFloat)
-        XCTAssertEqual(weight, NSFont.Weight.regular.rawValue, accuracy: 0.001)
-
-        let color = try XCTUnwrap(
-            store.document.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
-        )
-        XCTAssertTrue(color.isEqual(NSColor.secondaryLabelColor))
-
-        let paragraphStyle = try XCTUnwrap(
-            store.document.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
-        )
-        XCTAssertEqual(paragraphStyle.alignment, .center)
     }
 
     func testExistingDocumentInsertsTimestampAboveContentAndReturnsBodyStart() throws {
@@ -65,6 +53,10 @@ final class IdeaStoreTests: XCTestCase {
         )
         XCTAssertEqual(cursorRange.location, timestampBlock.utf16.count)
         XCTAssertEqual(cursorRange.length, 0)
+        try assertUsesBodyAttributes(
+            store.document,
+            in: NSRange(location: timestampBlock.utf16.count, length: 2)
+        )
     }
 
     func testEmptyDocumentInsertsSelectedTextAndReturnsSelectedRange() throws {
@@ -87,6 +79,7 @@ final class IdeaStoreTests: XCTestCase {
             selectedText
         )
         XCTAssertEqual(store.savedTimestampBlockCount, 1)
+        try assertUsesBodyAttributes(store.document, in: cursorRange)
     }
 
     func testExistingDocumentInsertsSelectedTextAboveContentAndReturnsSelectedRange() throws {
@@ -870,4 +863,115 @@ private func containsAttachment(_ document: NSAttributedString) -> Bool {
         }
     }
     return hasAttachment
+}
+
+private func assertUsesTimestampAttributes(
+    _ document: NSAttributedString,
+    at location: Int,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) throws {
+    let font = try XCTUnwrap(
+        document.attribute(.font, at: location, effectiveRange: nil) as? NSFont,
+        file: file,
+        line: line
+    )
+    XCTAssertEqual(font.pointSize, NSFont.smallSystemFontSize, accuracy: 0.001, file: file, line: line)
+    assertRegularFontWeight(font, file: file, line: line)
+    assertUsesMonospacedDigits(font, file: file, line: line)
+
+    let color = try XCTUnwrap(
+        document.attribute(.foregroundColor, at: location, effectiveRange: nil) as? NSColor,
+        file: file,
+        line: line
+    )
+    XCTAssertTrue(color.isEqual(NSColor.secondaryLabelColor), file: file, line: line)
+
+    let paragraphStyle = try XCTUnwrap(
+        document.attribute(.paragraphStyle, at: location, effectiveRange: nil) as? NSParagraphStyle,
+        file: file,
+        line: line
+    )
+    XCTAssertEqual(paragraphStyle.alignment, .center, file: file, line: line)
+    XCTAssertEqual(paragraphStyle.paragraphSpacingBefore, 0, accuracy: 0.001, file: file, line: line)
+    XCTAssertEqual(paragraphStyle.paragraphSpacing, 0, accuracy: 0.001, file: file, line: line)
+}
+
+private func assertUsesBodyAttributes(
+    _ document: NSAttributedString,
+    in range: NSRange,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) throws {
+    try assertValidRange(range, in: document, file: file, line: line)
+
+    document.enumerateAttributes(in: range) { attributes, effectiveRange, _ in
+        let text = (document.string as NSString).substring(with: effectiveRange)
+        guard !text.isEmpty else {
+            return
+        }
+
+        guard let font = attributes[.font] as? NSFont else {
+            XCTFail("Missing body font", file: file, line: line)
+            return
+        }
+        XCTAssertEqual(font.pointSize, 14, accuracy: 0.001, file: file, line: line)
+        assertRegularFontWeight(font, file: file, line: line)
+
+        let color = attributes[.foregroundColor] as? NSColor
+        XCTAssertTrue(color?.isEqual(NSColor.labelColor) ?? false, file: file, line: line)
+
+        guard let paragraphStyle = attributes[.paragraphStyle] as? NSParagraphStyle else {
+            XCTFail("Missing body paragraph style", file: file, line: line)
+            return
+        }
+        XCTAssertEqual(paragraphStyle.minimumLineHeight, 22, accuracy: 0.001, file: file, line: line)
+        XCTAssertEqual(paragraphStyle.maximumLineHeight, 22, accuracy: 0.001, file: file, line: line)
+        XCTAssertEqual(paragraphStyle.paragraphSpacing, 7, accuracy: 0.001, file: file, line: line)
+    }
+}
+
+private func assertValidRange(
+    _ range: NSRange,
+    in document: NSAttributedString,
+    file: StaticString,
+    line: UInt
+) throws {
+    let isValid = range.location >= 0 &&
+        range.length >= 0 &&
+        range.location <= document.length &&
+        range.length <= document.length - range.location
+    _ = try XCTUnwrap(isValid ? true : nil, "Invalid range \(range)", file: file, line: line)
+}
+
+private func assertRegularFontWeight(
+    _ font: NSFont,
+    file: StaticString,
+    line: UInt
+) {
+    guard let traits = font.fontDescriptor.object(forKey: .traits) as? [NSFontDescriptor.TraitKey: Any],
+          let weight = traits[.weight] as? CGFloat else {
+        XCTFail("Missing font weight", file: file, line: line)
+        return
+    }
+    XCTAssertEqual(weight, NSFont.Weight.regular.rawValue, accuracy: 0.001, file: file, line: line)
+}
+
+private func assertUsesMonospacedDigits(
+    _ font: NSFont,
+    file: StaticString,
+    line: UInt
+) {
+    let attributes: [NSAttributedString.Key: Any] = [.font: font]
+    let digitWidths = (0...9).map {
+        (String($0) as NSString).size(withAttributes: attributes).width
+    }
+
+    guard let firstWidth = digitWidths.first else {
+        return
+    }
+
+    for width in digitWidths {
+        XCTAssertEqual(width, firstWidth, accuracy: 0.001, file: file, line: line)
+    }
 }

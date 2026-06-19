@@ -4,6 +4,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct RichTextEditorView: NSViewRepresentable {
+    private static let bottomContentInset: CGFloat = 32
+
     let document: NSAttributedString
     let revision: Int
     let focusRequest: RichTextEditorFocusRequest
@@ -35,6 +37,12 @@ struct RichTextEditorView: NSViewRepresentable {
         scrollView.autohidesScrollers = true
         scrollView.borderType = .noBorder
         scrollView.drawsBackground = false
+        scrollView.contentInsets = NSEdgeInsets(
+            top: 0,
+            left: 0,
+            bottom: max(0, Self.bottomContentInset - textContainerInset.height),
+            right: 0
+        )
 
         let textView = scrollView.richTextView
         textView.delegate = context.coordinator
@@ -57,6 +65,12 @@ struct RichTextEditorView: NSViewRepresentable {
 
         let textView = scrollView.richTextView
         textView.textContainerInset = textContainerInset
+        scrollView.contentInsets = NSEdgeInsets(
+            top: 0,
+            left: 0,
+            bottom: max(0, Self.bottomContentInset - textContainerInset.height),
+            right: 0
+        )
 
         if context.coordinator.appliedRevision != revision {
             context.coordinator.isApplyingExternalChange = true
@@ -191,10 +205,7 @@ final class RichTextScrollView: NSScrollView {
 
 final class RichTextView: NSTextView {
     static var defaultTypingAttributes: [NSAttributedString.Key: Any] {
-        [
-            .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
-            .foregroundColor: NSColor.labelColor
-        ]
+        RichTextFormatting.bodyAttributes
     }
 
     override init(frame frameRect: NSRect) {
@@ -317,7 +328,7 @@ final class RichTextView: NSTextView {
         allowsImageEditing = true
         drawsBackground = false
         usesAdaptiveColorMappingForDarkAppearance = true
-        font = .systemFont(ofSize: NSFont.systemFontSize)
+        font = RichTextFormatting.bodyFont
         typingAttributes = Self.defaultTypingAttributes
     }
 

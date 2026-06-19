@@ -191,10 +191,7 @@ public enum RichTextDocument {
     static func bodyText(_ string: String) -> NSAttributedString {
         NSAttributedString(
             string: string,
-            attributes: [
-                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
-                .foregroundColor: NSColor.labelColor
-            ]
+            attributes: RichTextFormatting.bodyAttributes
         )
     }
 
@@ -450,16 +447,9 @@ public enum IdeaTimestampInserter {
     }
 
     private static func timestampLine(_ timestamp: String) -> NSAttributedString {
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.alignment = .center
-
         let result = NSMutableAttributedString(
             string: "\(timestamp)\n",
-            attributes: [
-                .font: NSFont.systemFont(ofSize: 10, weight: .regular),
-                .foregroundColor: NSColor.secondaryLabelColor,
-                .paragraphStyle: paragraphStyle
-            ]
+            attributes: RichTextFormatting.timestampAttributes
         )
         result.append(RichTextDocument.bodyText("\n"))
         return result

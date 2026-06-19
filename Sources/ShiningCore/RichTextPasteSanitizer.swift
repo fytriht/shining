@@ -3,10 +3,7 @@ import Foundation
 
 public enum RichTextPasteSanitizer {
     public static var defaultTextAttributes: [NSAttributedString.Key: Any] {
-        [
-            .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
-            .foregroundColor: NSColor.labelColor
-        ]
+        RichTextFormatting.bodyAttributes
     }
 
     public static func sanitizedPlainText(_ string: String) -> NSAttributedString {
