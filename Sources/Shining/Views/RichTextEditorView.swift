@@ -236,8 +236,21 @@ final class RichTextView: NSTextView {
     }
 
     override func paste(_ sender: Any?) {
-        super.paste(sender)
+        guard let pastedContent = sanitizedPasteboardContents(from: .general),
+              pastedContent.length > 0 else {
+            return
+        }
+
+        let selectedRange = selectedRange()
+        guard shouldChangeText(in: selectedRange, replacementString: pastedContent.string) else {
+            return
+        }
+
+        textStorage?.replaceCharacters(in: selectedRange, with: pastedContent)
+        setSelectedRange(NSRange(location: selectedRange.location + pastedContent.length, length: 0))
+        didChangeText()
         constrainImageAttachmentsToTextWidth()
+        typingAttributes = Self.defaultTypingAttributes
     }
 
     override func deleteBackward(_ sender: Any?) {
@@ -306,6 +319,154 @@ final class RichTextView: NSTextView {
         usesAdaptiveColorMappingForDarkAppearance = true
         font = .systemFont(ofSize: NSFont.systemFontSize)
         typingAttributes = Self.defaultTypingAttributes
+    }
+
+    private func sanitizedPasteboardContents(from pasteboard: NSPasteboard) -> NSAttributedString? {
+        let pasteboardImages = imageAttachments(from: pasteboard)
+        let imageSourceURLs = pasteboardImages.compactMap(\.sourceURL)
+        let result = NSMutableAttributedString()
+
+        if let richText = sanitizedRichText(from: pasteboard),
+           RichTextDocument.hasMeaningfulContent(richText) {
+            result.append(richText)
+        } else if let plainText = pasteboard.string(forType: .string),
+                  shouldUsePlainText(plainText, whenImageSourceURLsAre: imageSourceURLs) {
+            result.append(RichTextPasteSanitizer.sanitizedPlainText(plainText))
+        }
+
+        if !pasteboardImages.isEmpty, !containsAttachment(result) {
+            appendImages(pasteboardImages.map(\.attachment), to: result)
+        }
+
+        guard result.length > 0 else {
+            return nil
+        }
+        return result
+    }
+
+    private func sanitizedRichText(from pasteboard: NSPasteboard) -> NSAttributedString? {
+        if let data = pasteboard.data(forType: .rtfd),
+           let sanitized = RichTextPasteSanitizer.sanitizedImportedRichText(
+               data: data,
+               documentType: .rtfd
+           ) {
+            return sanitized
+        }
+
+        if let data = pasteboard.data(forType: .rtf),
+           let sanitized = RichTextPasteSanitizer.sanitizedImportedRichText(
+               data: data,
+               documentType: .rtf
+           ) {
+            return sanitized
+        }
+
+        if let data = pasteboard.data(forType: .html),
+           let sanitized = RichTextPasteSanitizer.sanitizedImportedRichText(
+               data: data,
+               documentType: .html,
+               preservesAttachments: false
+           ) {
+            return sanitized
+        }
+
+        return nil
+    }
+
+    private func shouldUsePlainText(
+        _ plainText: String,
+        whenImageSourceURLsAre imageSourceURLs: [URL]
+    ) -> Bool {
+        guard !plainText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+        guard !imageSourceURLs.isEmpty else {
+            return true
+        }
+
+        let pastedLines = plainText
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !pastedLines.isEmpty else {
+            return false
+        }
+
+        let imageURLRepresentations = Set(
+            imageSourceURLs.flatMap { url in
+                [url.absoluteString, url.path, url.relativePath]
+            }
+        )
+        return !pastedLines.allSatisfy { imageURLRepresentations.contains($0) }
+    }
+
+    private func imageAttachments(from pasteboard: NSPasteboard) -> [PasteboardImageAttachment] {
+        guard let items = pasteboard.pasteboardItems else {
+            return []
+        }
+
+        return items.compactMap { item in
+            if let attachment = imageAttachment(fromImageDataIn: item) {
+                return PasteboardImageAttachment(attachment: attachment, sourceURL: nil)
+            }
+
+            guard let fileURL = imageFileURL(from: item),
+                  let attachment = makeImageAttachment(for: fileURL) else {
+                return nil
+            }
+            return PasteboardImageAttachment(attachment: attachment, sourceURL: fileURL)
+        }
+    }
+
+    private func imageAttachment(fromImageDataIn item: NSPasteboardItem) -> NSTextAttachment? {
+        for pasteboardType in imagePasteboardTypes {
+            guard let data = item.data(forType: pasteboardType),
+                  let image = NSImage(data: data) else {
+                continue
+            }
+
+            let attachment = NSTextAttachment(data: data, ofType: pasteboardType.rawValue)
+            attachment.bounds = scaledBounds(for: image.size)
+            return attachment
+        }
+
+        return nil
+    }
+
+    private func imageFileURL(from item: NSPasteboardItem) -> URL? {
+        guard let fileURLString = item.string(forType: .fileURL),
+              let fileURL = URL(string: fileURLString),
+              fileURL.isFileURL else {
+            return nil
+        }
+
+        return fileURL
+    }
+
+    private func appendImages(
+        _ attachments: [NSTextAttachment],
+        to result: NSMutableAttributedString
+    ) {
+        for attachment in attachments {
+            if result.length > 0 {
+                result.append(RichTextPasteSanitizer.sanitizedPlainText("\n"))
+            }
+            result.append(NSAttributedString(attachment: attachment))
+        }
+    }
+
+    private func containsAttachment(_ attributedString: NSAttributedString) -> Bool {
+        var hasAttachment = false
+        attributedString.enumerateAttribute(
+            .attachment,
+            in: NSRange(location: 0, length: attributedString.length)
+        ) { value, _, stop in
+            if value is NSTextAttachment {
+                hasAttachment = true
+                stop.pointee = true
+            }
+        }
+        return hasAttachment
     }
 
     private func insertImages(_ urls: [URL], replacing range: NSRange) {
@@ -440,5 +601,20 @@ final class RichTextView: NSTextView {
         }
 
         return nil
+    }
+
+    private var imagePasteboardTypes: [NSPasteboard.PasteboardType] {
+        [
+            .png,
+            .tiff,
+            NSPasteboard.PasteboardType("public.jpeg"),
+            NSPasteboard.PasteboardType("public.heic"),
+            NSPasteboard.PasteboardType("public.heif")
+        ]
+    }
+
+    private struct PasteboardImageAttachment {
+        let attachment: NSTextAttachment
+        let sourceURL: URL?
     }
 }

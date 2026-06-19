@@ -1,0 +1,137 @@
+import AppKit
+import XCTest
+@testable import ShiningCore
+
+final class RichTextPasteSanitizerTests: XCTestCase {
+    func testStyledHTMLPastesAsPlainText() throws {
+        let document = try sanitizedHTML(
+            """
+            <html><body><span style="color: red; font-size: 32px; font-weight: bold;">Styled</span></body></html>
+            """
+        )
+
+        XCTAssertEqual(document.string.trimmingCharacters(in: .newlines), "Styled")
+        assertUsesDefaultTextAttributes(document)
+    }
+
+    func testHTMLUnorderedListConvertsToMarkdownMarkers() throws {
+        let document = try sanitizedHTML("<html><body><ul><li>A</li><li>B</li></ul></body></html>")
+
+        XCTAssertEqual(document.string.trimmingCharacters(in: .newlines), "- A\n- B")
+        assertUsesDefaultTextAttributes(document)
+    }
+
+    func testHTMLOrderedListConvertsToMarkdownMarkers() throws {
+        let document = try sanitizedHTML("<html><body><ol><li>A</li><li>B</li></ol></body></html>")
+
+        XCTAssertEqual(document.string.trimmingCharacters(in: .newlines), "1. A\n2. B")
+        assertUsesDefaultTextAttributes(document)
+    }
+
+    func testPlainTextMarkersArePreserved() {
+        let document = RichTextPasteSanitizer.sanitizedPlainText("- A\n* B")
+
+        XCTAssertEqual(document.string, "- A\n* B")
+        assertUsesDefaultTextAttributes(document)
+    }
+
+    func testAttributedStringPreservesImageAttachmentAndRemovesStyles() {
+        let source = NSMutableAttributedString(
+            string: "Before ",
+            attributes: [
+                .font: NSFont.boldSystemFont(ofSize: 28),
+                .foregroundColor: NSColor.red
+            ]
+        )
+        source.append(makeImageAttributedString())
+        source.append(
+            NSAttributedString(
+                string: " After",
+                attributes: [
+                    .link: URL(string: "https://example.com")!,
+                    .foregroundColor: NSColor.blue
+                ]
+            )
+        )
+
+        let document = RichTextPasteSanitizer.sanitizedAttributedString(source)
+
+        XCTAssertEqual(document.string, "Before \u{fffc} After")
+        XCTAssertTrue(containsAttachment(document))
+        XCTAssertNil(document.attribute(.link, at: document.length - 1, effectiveRange: nil))
+        assertUsesDefaultTextAttributes(document)
+    }
+}
+
+private func sanitizedHTML(_ html: String) throws -> NSAttributedString {
+    try XCTUnwrap(
+        RichTextPasteSanitizer.sanitizedImportedRichText(
+            data: Data(html.utf8),
+            documentType: .html,
+            preservesAttachments: false
+        )
+    )
+}
+
+private func assertUsesDefaultTextAttributes(
+    _ document: NSAttributedString,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) {
+    document.enumerateAttributes(in: NSRange(location: 0, length: document.length)) { attributes, range, _ in
+        if attributes[.attachment] is NSTextAttachment {
+            return
+        }
+
+        let text = (document.string as NSString).substring(with: range)
+        guard !text.isEmpty else {
+            return
+        }
+
+        XCTAssertNil(attributes[.link], file: file, line: line)
+        XCTAssertNil(attributes[.paragraphStyle], file: file, line: line)
+
+        let font = attributes[.font] as? NSFont
+        XCTAssertEqual(font?.pointSize, NSFont.systemFontSize, file: file, line: line)
+
+        let color = attributes[.foregroundColor] as? NSColor
+        XCTAssertTrue(color?.isEqual(NSColor.labelColor) ?? false, file: file, line: line)
+    }
+}
+
+private func makeImageAttributedString() -> NSAttributedString {
+    let attachment = NSTextAttachment(data: makePNGData(), ofType: "public.png")
+    attachment.bounds = NSRect(x: 0, y: 0, width: 8, height: 8)
+    return NSAttributedString(attachment: attachment)
+}
+
+private func makePNGData() -> Data {
+    let representation = NSBitmapImageRep(
+        bitmapDataPlanes: nil,
+        pixelsWide: 4,
+        pixelsHigh: 4,
+        bitsPerSample: 8,
+        samplesPerPixel: 4,
+        hasAlpha: true,
+        isPlanar: false,
+        colorSpaceName: .deviceRGB,
+        bytesPerRow: 0,
+        bitsPerPixel: 0
+    )
+
+    return representation?.representation(using: .png, properties: [:]) ?? Data()
+}
+
+private func containsAttachment(_ document: NSAttributedString) -> Bool {
+    var hasAttachment = false
+    document.enumerateAttribute(
+        .attachment,
+        in: NSRange(location: 0, length: document.length)
+    ) { value, _, stop in
+        if value is NSTextAttachment {
+            hasAttachment = true
+            stop.pointee = true
+        }
+    }
+    return hasAttachment
+}
