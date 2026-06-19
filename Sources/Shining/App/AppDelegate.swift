@@ -5,7 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let coordinator: WindowCoordinator
 
     override init() {
-        self.coordinator = WindowCoordinator(store: IdeaStore())
+        self.coordinator = WindowCoordinator(store: JournalStore())
         super.init()
     }
 

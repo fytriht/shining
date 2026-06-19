@@ -8,7 +8,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
         "\(ShiningApp.bundleIdentifier).main-window"
     )
 
-    private let store: IdeaStore
+    private let store: JournalStore
     private let systemSelectionService: SystemSelectionService
     private let editorFocusController = EditorFocusController()
     private var hotKeyService: HotKeyService?
@@ -16,7 +16,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
     private var dockBadgeCancellable: AnyCancellable?
 
     init(
-        store: IdeaStore,
+        store: JournalStore,
         systemSelectionService: SystemSelectionService = SystemSelectionService()
     ) {
         self.store = store
@@ -65,7 +65,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
             )
         }
 
-        let insertion = store.insertTimestampForDelayedSelection()
+        let insertion = store.insertEntryForDelayedSelection()
         delayedSelectionCapture.pendingSelectionInsertion = insertion.pendingSelectionInsertion
         if delayedSelectionCapture.didReceiveSelectedText {
             insertDelayedSelection(
@@ -73,30 +73,30 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
                 for: insertion.pendingSelectionInsertion
             )
         }
-        showMainWindow(focusRange: insertion.cursorRange, cleanUpBeforeShowing: false)
+        showMainWindow(focusSelection: insertion.cursorSelection, cleanUpBeforeShowing: false)
     }
 
     private func showEditorAndInsertTimestamp(selectedText: String?) {
-        let cursorRange = store.insertTimestamp(selectedText: selectedText)
-        showMainWindow(focusRange: cursorRange, cleanUpBeforeShowing: false)
+        let selection = store.insertEntry(selectedText: selectedText)
+        showMainWindow(focusSelection: selection, cleanUpBeforeShowing: false)
     }
 
     private func insertDelayedSelection(
         _ selectedText: String?,
-        for pendingSelectionInsertion: IdeaStore.PendingSelectionInsertion
+        for pendingSelectionInsertion: JournalStore.PendingSelectionInsertion
     ) {
-        guard let selectedRange = store.insertSelectedText(
+        guard let selection = store.insertSelectedText(
             selectedText,
             for: pendingSelectionInsertion
         ) else {
             return
         }
 
-        editorFocusController.requestFocus(selectedRange: selectedRange)
+        editorFocusController.requestFocus(selection: selection)
     }
 
     func showMainWindow(
-        focusRange: NSRange? = nil,
+        focusSelection: JournalTextSelection? = nil,
         cleanUpBeforeShowing: Bool = true
     ) {
         if cleanUpBeforeShowing {
@@ -107,7 +107,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
 
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
-        editorFocusController.requestFocus(selectedRange: focusRange)
+        editorFocusController.requestFocus(selection: focusSelection)
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
@@ -162,7 +162,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
     }
 
     private func startDockBadgeUpdates() {
-        dockBadgeCancellable = store.$savedTimestampBlockCount
+        dockBadgeCancellable = store.$savedEntryCount
             .receive(on: RunLoop.main)
             .sink { count in
                 NSApp.dockTile.badgeLabel = count > 0 ? String(count) : nil
@@ -171,7 +171,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
 }
 
 private final class DelayedSelectionCapture {
-    var pendingSelectionInsertion: IdeaStore.PendingSelectionInsertion?
+    var pendingSelectionInsertion: JournalStore.PendingSelectionInsertion?
     var selectedText: String?
     var didReceiveSelectedText = false
 }

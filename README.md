@@ -9,7 +9,7 @@ Press `Command + Option + Space` to bring up the editor window and insert a time
 - Global hotkey: `Command + Option + Space`
 - Main editor window for writing, reviewing, and editing saved ideas
 - New timestamps are inserted at the top, newest first
-- Rich text editing with images
+- Quiet native text layout with image attachments
 - Local persistence in Application Support
 - Native macOS app icon
 
@@ -101,10 +101,11 @@ Shining-<version>.sha256
 Saved ideas are stored at:
 
 ```text
-~/Library/Application Support/Shining/ideas.rtfd
+~/Library/Application Support/Shining/journal/document.json
+~/Library/Application Support/Shining/journal/attachments/
 ```
 
-Existing `ideas.md` files are not automatically migrated.
+Legacy `ideas.rtfd` and `ideas.md` files are left untouched and are not migrated.
 
 ## Project Structure
 

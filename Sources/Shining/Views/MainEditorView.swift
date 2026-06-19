@@ -2,33 +2,18 @@ import Foundation
 import ShiningCore
 import SwiftUI
 
-struct RichTextEditorFocusRequest {
-    static let none = RichTextEditorFocusRequest(id: 0, selectedRange: nil)
-
-    let id: Int
-    let selectedRange: NSRange?
-}
-
-final class EditorFocusController: ObservableObject {
-    @Published private(set) var request = RichTextEditorFocusRequest.none
-
-    func requestFocus(selectedRange: NSRange? = nil) {
-        request = RichTextEditorFocusRequest(
-            id: request.id + 1,
-            selectedRange: selectedRange
-        )
-    }
-}
-
 struct MainEditorView: View {
-    @ObservedObject var store: IdeaStore
+    @ObservedObject var store: JournalStore
     @ObservedObject var focusController: EditorFocusController
 
     var body: some View {
-        RichTextEditorView(
+        JournalEditorView(
             document: store.document,
             revision: store.revision,
-            focusRequest: focusController.request
+            focusRequest: focusController.request,
+            attachmentURL: store.attachmentURL(for:),
+            importImageFile: store.importImageFile(_:),
+            importImage: store.importImage(_:originalFilename:)
         ) { document in
             store.replaceDocument(document)
         }

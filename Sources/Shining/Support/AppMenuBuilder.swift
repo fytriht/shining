@@ -95,7 +95,7 @@ enum AppMenuBuilder {
 
         let insertImage = NSMenuItem(
             title: "Insert Image...",
-            action: #selector(RichTextView.insertImage(_:)),
+            action: #selector(JournalTextView.insertImage(_:)),
             keyEquivalent: "i"
         )
         insertImage.keyEquivalentModifierMask = [.command, .shift]
