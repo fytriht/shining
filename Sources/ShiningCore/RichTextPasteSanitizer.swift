@@ -10,6 +10,11 @@ public enum RichTextPasteSanitizer {
         NSAttributedString(string: string, attributes: defaultTextAttributes)
     }
 
+    public static func sanitizedTrimmedPlainText(_ string: String) -> NSAttributedString? {
+        let trimmed = trimmingOuterWhitespace(from: sanitizedPlainText(string))
+        return trimmed.length > 0 ? trimmed : nil
+    }
+
     public static func sanitizedPasteboardText(from pasteboard: NSPasteboard) -> NSAttributedString? {
         if let richText = sanitizedPasteboardRichText(from: pasteboard),
            RichTextDocument.hasMeaningfulContent(richText) {
@@ -21,7 +26,7 @@ public enum RichTextPasteSanitizer {
             return nil
         }
 
-        return sanitizedPlainText(plainText)
+        return sanitizedTrimmedPlainText(plainText)
     }
 
     public static func sanitizedPasteboardRichText(from pasteboard: NSPasteboard) -> NSAttributedString? {
@@ -30,7 +35,7 @@ public enum RichTextPasteSanitizer {
                data: data,
                documentType: .rtfd
            ) {
-            return sanitized
+            return trimmingOuterWhitespace(from: sanitized)
         }
 
         if let data = pasteboard.data(forType: .rtf),
@@ -38,7 +43,7 @@ public enum RichTextPasteSanitizer {
                data: data,
                documentType: .rtf
            ) {
-            return sanitized
+            return trimmingOuterWhitespace(from: sanitized)
         }
 
         if let data = pasteboard.data(forType: .html),
@@ -47,7 +52,7 @@ public enum RichTextPasteSanitizer {
                documentType: .html,
                preservesAttachments: false
            ) {
-            return sanitized
+            return trimmingOuterWhitespace(from: sanitized)
         }
 
         return nil
@@ -97,6 +102,56 @@ public enum RichTextPasteSanitizer {
             attributedString,
             preservesAttachments: preservesAttachments
         )
+    }
+
+    public static func sanitizedTrimmedAttributedString(
+        _ attributedString: NSAttributedString,
+        normalizesLists: Bool = false,
+        preservesAttachments: Bool = true
+    ) -> NSAttributedString {
+        trimmingOuterWhitespace(
+            from: sanitizedAttributedString(
+                attributedString,
+                normalizesLists: normalizesLists,
+                preservesAttachments: preservesAttachments
+            )
+        )
+    }
+
+    private static func trimmingOuterWhitespace(
+        from attributedString: NSAttributedString
+    ) -> NSAttributedString {
+        guard attributedString.length > 0 else {
+            return NSAttributedString()
+        }
+
+        let string = attributedString.string as NSString
+        var start = 0
+        var end = attributedString.length
+
+        while start < end, isOuterWhitespace(string.character(at: start)) {
+            start += 1
+        }
+
+        while end > start, isOuterWhitespace(string.character(at: end - 1)) {
+            end -= 1
+        }
+
+        guard start < end else {
+            return NSAttributedString()
+        }
+
+        return attributedString.attributedSubstring(
+            from: NSRange(location: start, length: end - start)
+        )
+    }
+
+    private static func isOuterWhitespace(_ character: unichar) -> Bool {
+        guard let scalar = UnicodeScalar(Int(character)) else {
+            return false
+        }
+
+        return CharacterSet.whitespacesAndNewlines.contains(scalar)
     }
 
     private static func sanitizedAttributedStringWithNormalizedLists(

@@ -41,14 +41,67 @@ final class RichTextPasteSanitizerTests: XCTestCase {
 
         let document = try XCTUnwrap(RichTextPasteSanitizer.sanitizedPasteboardText(from: pasteboard))
 
-        XCTAssertEqual(document.string.trimmingCharacters(in: .newlines), "- A\n- B")
+        XCTAssertEqual(document.string, "- A\n- B")
         assertUsesDefaultTextAttributes(document)
+    }
+
+    func testPasteboardPlainTextTrimsOuterWhitespace() throws {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
+        defer { pasteboard.releaseGlobally() }
+        pasteboard.clearContents()
+        XCTAssertTrue(pasteboard.setString("  hello\n", forType: .string))
+
+        let document = try XCTUnwrap(RichTextPasteSanitizer.sanitizedPasteboardText(from: pasteboard))
+
+        XCTAssertEqual(document.string, "hello")
+        assertUsesDefaultTextAttributes(document)
+    }
+
+    func testPasteboardRichTextTrimsOuterWhitespace() throws {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
+        defer { pasteboard.releaseGlobally() }
+        pasteboard.clearContents()
+        let source = NSAttributedString(
+            string: "\n  Styled\t\n",
+            attributes: [
+                .font: NSFont.boldSystemFont(ofSize: 28),
+                .foregroundColor: NSColor.red
+            ]
+        )
+        let data = try XCTUnwrap(
+            source.rtf(
+                from: NSRange(location: 0, length: source.length),
+                documentAttributes: [:]
+            )
+        )
+        XCTAssertTrue(pasteboard.setData(data, forType: .rtf))
+
+        let document = try XCTUnwrap(RichTextPasteSanitizer.sanitizedPasteboardText(from: pasteboard))
+
+        XCTAssertEqual(document.string, "Styled")
+        assertUsesDefaultTextAttributes(document)
+    }
+
+    func testWhitespaceOnlyPasteboardTextIsIgnored() {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
+        defer { pasteboard.releaseGlobally() }
+        pasteboard.clearContents()
+        XCTAssertTrue(pasteboard.setString(" \n\t ", forType: .string))
+
+        XCTAssertNil(RichTextPasteSanitizer.sanitizedPasteboardText(from: pasteboard))
     }
 
     func testPlainTextMarkersArePreserved() {
         let document = RichTextPasteSanitizer.sanitizedPlainText("- A\n* B")
 
         XCTAssertEqual(document.string, "- A\n* B")
+        assertUsesDefaultTextAttributes(document)
+    }
+
+    func testPlainTextSanitizerKeepsStructuralNewlines() {
+        let document = RichTextPasteSanitizer.sanitizedPlainText("\n")
+
+        XCTAssertEqual(document.string, "\n")
         assertUsesDefaultTextAttributes(document)
     }
 
@@ -77,6 +130,17 @@ final class RichTextPasteSanitizerTests: XCTestCase {
         XCTAssertTrue(containsAttachment(document))
         XCTAssertNil(document.attribute(.link, at: document.length - 1, effectiveRange: nil))
         assertUsesDefaultTextAttributes(document)
+    }
+
+    func testTrimmedAttributedStringPreservesAttachment() {
+        let source = NSMutableAttributedString(string: " \n")
+        source.append(makeImageAttributedString())
+        source.append(NSAttributedString(string: "\t "))
+
+        let document = RichTextPasteSanitizer.sanitizedTrimmedAttributedString(source)
+
+        XCTAssertEqual(document.string, "\u{fffc}")
+        XCTAssertTrue(containsAttachment(document))
     }
 }
 

@@ -406,8 +406,9 @@ final class RichTextView: NSTextView {
            RichTextDocument.hasMeaningfulContent(richText) {
             result.append(richText)
         } else if let plainText = pasteboard.string(forType: .string),
-                  shouldUsePlainText(plainText, whenImageSourceURLsAre: imageSourceURLs) {
-            result.append(RichTextPasteSanitizer.sanitizedPlainText(plainText))
+                  shouldUsePlainText(plainText, whenImageSourceURLsAre: imageSourceURLs),
+                  let trimmedPlainText = RichTextPasteSanitizer.sanitizedTrimmedPlainText(plainText) {
+            result.append(trimmedPlainText)
         }
 
         if !pasteboardImages.isEmpty, !containsAttachment(result) {

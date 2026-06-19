@@ -77,7 +77,7 @@ public final class IdeaStore: ObservableObject {
         selectedText: String? = nil
     ) -> NSRange {
         let selectedContent = selectedText.flatMap { text in
-            text.isEmpty ? nil : RichTextPasteSanitizer.sanitizedPlainText(text)
+            RichTextPasteSanitizer.sanitizedTrimmedPlainText(text)
         }
         return insertTimestamp(date: date, selectedContent: selectedContent)
     }
@@ -122,7 +122,7 @@ public final class IdeaStore: ObservableObject {
         for pendingInsertion: PendingSelectionInsertion
     ) -> NSRange? {
         let selectedContent = selectedText.flatMap { text in
-            text.isEmpty ? nil : RichTextPasteSanitizer.sanitizedPlainText(text)
+            RichTextPasteSanitizer.sanitizedTrimmedPlainText(text)
         }
         return insertSelectedContent(selectedContent, for: pendingInsertion)
     }
@@ -142,7 +142,7 @@ public final class IdeaStore: ObservableObject {
             return nil
         }
 
-        let selectedBody = RichTextPasteSanitizer.sanitizedAttributedString(
+        let selectedBody = RichTextPasteSanitizer.sanitizedTrimmedAttributedString(
             selectedContent,
             normalizesLists: true
         )

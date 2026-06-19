@@ -129,6 +129,29 @@ final class IdeaStoreTests: XCTestCase {
         )
     }
 
+    func testSelectedTextInsertionTrimsOuterWhitespaceAndReturnsTrimmedRange() throws {
+        let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = IdeaStore(fileURL: fileURL)
+        let selectedText = "  captured idea\n"
+        let trimmedText = "captured idea"
+        let cursorRange = store.insertTimestamp(
+            date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40),
+            selectedText: selectedText
+        )
+        let timestampBlock = "2026-06-02 08:40\n\n"
+
+        XCTAssertEqual(store.document.string, "\(timestampBlock)\(trimmedText)")
+        XCTAssertEqual(cursorRange.location, timestampBlock.utf16.count)
+        XCTAssertEqual(cursorRange.length, trimmedText.utf16.count)
+        XCTAssertEqual(
+            (store.document.string as NSString).substring(with: cursorRange),
+            trimmedText
+        )
+        try assertUsesBodyAttributes(store.document, in: cursorRange)
+    }
+
     func testEmptySelectedTextKeepsTimestampOnlyInsertionBehavior() throws {
         let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -195,6 +218,33 @@ final class IdeaStoreTests: XCTestCase {
         )
     }
 
+    func testPendingSelectionInsertionTrimsOuterWhitespace() throws {
+        let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = IdeaStore(fileURL: fileURL)
+        let insertion = store.insertTimestampForDelayedSelection(
+            date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40)
+        )
+        let selectedText = "\n\tsecond capture  "
+        let trimmedText = "second capture"
+        let selectedRange = try XCTUnwrap(
+            store.insertSelectedText(
+                selectedText,
+                for: insertion.pendingSelectionInsertion
+            )
+        )
+        let timestampBlock = "2026-06-02 08:40\n\n"
+
+        XCTAssertEqual(store.document.string, "\(timestampBlock)\(trimmedText)")
+        XCTAssertEqual(selectedRange.location, timestampBlock.utf16.count)
+        XCTAssertEqual(selectedRange.length, trimmedText.utf16.count)
+        XCTAssertEqual(
+            (store.document.string as NSString).substring(with: selectedRange),
+            trimmedText
+        )
+    }
+
     func testPendingSelectionInsertionNormalizesCapturedRichTextList() throws {
         let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -206,6 +256,37 @@ final class IdeaStoreTests: XCTestCase {
         let selectedRange = try XCTUnwrap(
             store.insertSelectedContent(
                 makeUnorderedListAttributedString("A\nB"),
+                for: insertion.pendingSelectionInsertion
+            )
+        )
+        let timestampBlock = "2026-06-02 08:40\n\n"
+        let selectedText = "- A\n- B"
+
+        XCTAssertEqual(store.document.string, "\(timestampBlock)\(selectedText)")
+        XCTAssertEqual(selectedRange.location, timestampBlock.utf16.count)
+        XCTAssertEqual(selectedRange.length, selectedText.utf16.count)
+        XCTAssertEqual(
+            (store.document.string as NSString).substring(with: selectedRange),
+            selectedText
+        )
+        try assertUsesBodyAttributes(store.document, in: selectedRange)
+    }
+
+    func testPendingSelectionInsertionTrimsOuterWhitespaceAroundRichTextList() throws {
+        let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = IdeaStore(fileURL: fileURL)
+        let insertion = store.insertTimestampForDelayedSelection(
+            date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40)
+        )
+        let selectedContent = NSMutableAttributedString(string: "\n")
+        selectedContent.append(makeUnorderedListAttributedString("A\nB"))
+        selectedContent.append(NSAttributedString(string: "\n"))
+
+        let selectedRange = try XCTUnwrap(
+            store.insertSelectedContent(
+                selectedContent,
                 for: insertion.pendingSelectionInsertion
             )
         )

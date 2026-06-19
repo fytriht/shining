@@ -506,7 +506,7 @@ public enum IdeaTimestampInserter {
         into existing: NSAttributedString
     ) -> Insertion {
         let selectedContent = selectedText.flatMap { text in
-            text.isEmpty ? nil : RichTextPasteSanitizer.sanitizedPlainText(text)
+            RichTextPasteSanitizer.sanitizedTrimmedPlainText(text)
         }
         return insert(
             timestamp: timestamp,
@@ -550,7 +550,7 @@ public enum IdeaTimestampInserter {
             return nil
         }
 
-        let sanitized = RichTextPasteSanitizer.sanitizedAttributedString(
+        let sanitized = RichTextPasteSanitizer.sanitizedTrimmedAttributedString(
             selectedContent,
             normalizesLists: true
         )
