@@ -1,6 +1,7 @@
 import ApplicationServices
 import AppKit
 import Carbon.HIToolbox
+import ShiningCore
 
 struct SystemSelectionService {
     private static let copyTimeout: TimeInterval = 0.45
@@ -11,7 +12,7 @@ struct SystemSelectionService {
         _ = canPostSyntheticEvents()
     }
 
-    func selectedText(completion: @escaping (String?) -> Void) {
+    func selectedContent(completion: @escaping (NSAttributedString?) -> Void) {
         guard let targetApplication = NSWorkspace.shared.frontmostApplication,
               targetApplication.processIdentifier != ProcessInfo.processInfo.processIdentifier else {
             completion(nil)
@@ -135,7 +136,7 @@ private final class PasteboardTextPoller {
     private let changeCount: Int
     private let deadline: Date
     private let interval: TimeInterval
-    private let completion: (String?) -> Void
+    private let completion: (NSAttributedString?) -> Void
     private var timer: Timer?
     private var retainedSelf: PasteboardTextPoller?
 
@@ -145,7 +146,7 @@ private final class PasteboardTextPoller {
         changeCount: Int,
         timeout: TimeInterval,
         interval: TimeInterval,
-        completion: @escaping (String?) -> Void
+        completion: @escaping (NSAttributedString?) -> Void
     ) {
         self.pasteboard = pasteboard
         self.snapshot = snapshot
@@ -165,8 +166,8 @@ private final class PasteboardTextPoller {
 
     private func poll() {
         if pasteboard.changeCount != changeCount {
-            let text = pasteboard.string(forType: .string)
-            finish(text?.isEmpty == false ? text : nil, restorePasteboard: true)
+            let content = RichTextPasteSanitizer.sanitizedPasteboardText(from: pasteboard)
+            finish(content, restorePasteboard: true)
             return
         }
 
@@ -175,7 +176,7 @@ private final class PasteboardTextPoller {
         }
     }
 
-    private func finish(_ text: String?, restorePasteboard: Bool) {
+    private func finish(_ content: NSAttributedString?, restorePasteboard: Bool) {
         timer?.invalidate()
         timer = nil
         if restorePasteboard {
@@ -184,6 +185,6 @@ private final class PasteboardTextPoller {
 
         let completion = self.completion
         retainedSelf = nil
-        completion(text)
+        completion(content)
     }
 }

@@ -10,6 +10,49 @@ public enum RichTextPasteSanitizer {
         NSAttributedString(string: string, attributes: defaultTextAttributes)
     }
 
+    public static func sanitizedPasteboardText(from pasteboard: NSPasteboard) -> NSAttributedString? {
+        if let richText = sanitizedPasteboardRichText(from: pasteboard),
+           RichTextDocument.hasMeaningfulContent(richText) {
+            return richText
+        }
+
+        guard let plainText = pasteboard.string(forType: .string),
+              !plainText.isEmpty else {
+            return nil
+        }
+
+        return sanitizedPlainText(plainText)
+    }
+
+    public static func sanitizedPasteboardRichText(from pasteboard: NSPasteboard) -> NSAttributedString? {
+        if let data = pasteboard.data(forType: .rtfd),
+           let sanitized = sanitizedImportedRichText(
+               data: data,
+               documentType: .rtfd
+           ) {
+            return sanitized
+        }
+
+        if let data = pasteboard.data(forType: .rtf),
+           let sanitized = sanitizedImportedRichText(
+               data: data,
+               documentType: .rtf
+           ) {
+            return sanitized
+        }
+
+        if let data = pasteboard.data(forType: .html),
+           let sanitized = sanitizedImportedRichText(
+               data: data,
+               documentType: .html,
+               preservesAttachments: false
+           ) {
+            return sanitized
+        }
+
+        return nil
+    }
+
     public static func sanitizedImportedRichText(
         data: Data,
         documentType: NSAttributedString.DocumentType,

@@ -28,6 +28,23 @@ final class RichTextPasteSanitizerTests: XCTestCase {
         assertUsesDefaultTextAttributes(document)
     }
 
+    func testPasteboardHTMLListConvertsToMarkdownMarkers() throws {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
+        defer { pasteboard.releaseGlobally() }
+        pasteboard.clearContents()
+        XCTAssertTrue(
+            pasteboard.setData(
+                Data("<html><body><ul><li>A</li><li>B</li></ul></body></html>".utf8),
+                forType: .html
+            )
+        )
+
+        let document = try XCTUnwrap(RichTextPasteSanitizer.sanitizedPasteboardText(from: pasteboard))
+
+        XCTAssertEqual(document.string.trimmingCharacters(in: .newlines), "- A\n- B")
+        assertUsesDefaultTextAttributes(document)
+    }
+
     func testPlainTextMarkersArePreserved() {
         let document = RichTextPasteSanitizer.sanitizedPlainText("- A\n* B")
 

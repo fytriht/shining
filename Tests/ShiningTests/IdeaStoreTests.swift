@@ -195,6 +195,33 @@ final class IdeaStoreTests: XCTestCase {
         )
     }
 
+    func testPendingSelectionInsertionNormalizesCapturedRichTextList() throws {
+        let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = IdeaStore(fileURL: fileURL)
+        let insertion = store.insertTimestampForDelayedSelection(
+            date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40)
+        )
+        let selectedRange = try XCTUnwrap(
+            store.insertSelectedContent(
+                makeUnorderedListAttributedString("A\nB"),
+                for: insertion.pendingSelectionInsertion
+            )
+        )
+        let timestampBlock = "2026-06-02 08:40\n\n"
+        let selectedText = "- A\n- B"
+
+        XCTAssertEqual(store.document.string, "\(timestampBlock)\(selectedText)")
+        XCTAssertEqual(selectedRange.location, timestampBlock.utf16.count)
+        XCTAssertEqual(selectedRange.length, selectedText.utf16.count)
+        XCTAssertEqual(
+            (store.document.string as NSString).substring(with: selectedRange),
+            selectedText
+        )
+        try assertUsesBodyAttributes(store.document, in: selectedRange)
+    }
+
     func testPendingSelectionInsertionSkipsAfterUserEdit() throws {
         let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -811,6 +838,19 @@ private func makeImageAttributedString() -> NSAttributedString {
     let attachment = NSTextAttachment(data: data, ofType: "public.png")
     attachment.bounds = NSRect(x: 0, y: 0, width: 8, height: 8)
     return NSAttributedString(attachment: attachment)
+}
+
+private func makeUnorderedListAttributedString(_ string: String) -> NSAttributedString {
+    let paragraphStyle = NSMutableParagraphStyle()
+    paragraphStyle.textLists = [NSTextList(markerFormat: .disc, options: 0)]
+    return NSAttributedString(
+        string: string,
+        attributes: [
+            .font: NSFont.boldSystemFont(ofSize: 24),
+            .foregroundColor: NSColor.systemRed,
+            .paragraphStyle: paragraphStyle
+        ]
+    )
 }
 
 private func makePNGData() -> Data {

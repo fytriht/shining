@@ -45,14 +45,14 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
 
     func showEditorAndInsertTimestamp() {
         if NSApp.isActive {
-            showEditorAndInsertTimestamp(selectedText: nil)
+            showEditorAndInsertTimestamp(selectedContent: nil)
             return
         }
 
         let delayedSelectionCapture = DelayedSelectionCapture()
-        systemSelectionService.selectedText { [weak self, delayedSelectionCapture] selectedText in
-            delayedSelectionCapture.selectedText = selectedText
-            delayedSelectionCapture.didReceiveSelectedText = true
+        systemSelectionService.selectedContent { [weak self, delayedSelectionCapture] selectedContent in
+            delayedSelectionCapture.selectedContent = selectedContent
+            delayedSelectionCapture.didReceiveSelectedContent = true
 
             guard let pendingSelectionInsertion =
                 delayedSelectionCapture.pendingSelectionInsertion else {
@@ -60,33 +60,33 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
             }
 
             self?.insertDelayedSelection(
-                selectedText,
+                selectedContent,
                 for: pendingSelectionInsertion
             )
         }
 
         let insertion = store.insertTimestampForDelayedSelection()
         delayedSelectionCapture.pendingSelectionInsertion = insertion.pendingSelectionInsertion
-        if delayedSelectionCapture.didReceiveSelectedText {
+        if delayedSelectionCapture.didReceiveSelectedContent {
             insertDelayedSelection(
-                delayedSelectionCapture.selectedText,
+                delayedSelectionCapture.selectedContent,
                 for: insertion.pendingSelectionInsertion
             )
         }
         showMainWindow(focusRange: insertion.cursorRange, cleanUpBeforeShowing: false)
     }
 
-    private func showEditorAndInsertTimestamp(selectedText: String?) {
-        let cursorRange = store.insertTimestamp(selectedText: selectedText)
+    private func showEditorAndInsertTimestamp(selectedContent: NSAttributedString?) {
+        let cursorRange = store.insertTimestamp(selectedContent: selectedContent)
         showMainWindow(focusRange: cursorRange, cleanUpBeforeShowing: false)
     }
 
     private func insertDelayedSelection(
-        _ selectedText: String?,
+        _ selectedContent: NSAttributedString?,
         for pendingSelectionInsertion: IdeaStore.PendingSelectionInsertion
     ) {
-        guard let selectedRange = store.insertSelectedText(
-            selectedText,
+        guard let selectedRange = store.insertSelectedContent(
+            selectedContent,
             for: pendingSelectionInsertion
         ) else {
             return
@@ -172,8 +172,8 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
 
 private final class DelayedSelectionCapture {
     var pendingSelectionInsertion: IdeaStore.PendingSelectionInsertion?
-    var selectedText: String?
-    var didReceiveSelectedText = false
+    var selectedContent: NSAttributedString?
+    var didReceiveSelectedContent = false
 }
 
 private final class EscClosableWindow: NSWindow {

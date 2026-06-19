@@ -422,13 +422,26 @@ public enum IdeaTimestampInserter {
         selectedText: String? = nil,
         into existing: NSAttributedString
     ) -> Insertion {
+        let selectedContent = selectedText.flatMap { text in
+            text.isEmpty ? nil : RichTextPasteSanitizer.sanitizedPlainText(text)
+        }
+        return insert(
+            timestamp: timestamp,
+            selectedContent: selectedContent,
+            into: existing
+        )
+    }
+
+    public static func insert(
+        timestamp: String,
+        selectedContent: NSAttributedString?,
+        into existing: NSAttributedString
+    ) -> Insertion {
         let result = NSMutableAttributedString()
         let timestampBlock = timestampLine(timestamp)
         result.append(timestampBlock)
 
-        let selectedBody = selectedText.flatMap { text in
-            text.isEmpty ? nil : RichTextDocument.bodyText(text)
-        }
+        let selectedBody = sanitizedSelectedContent(selectedContent)
         let cursorRange: NSRange
         if let selectedBody {
             let selectionLocation = result.length
@@ -444,6 +457,21 @@ public enum IdeaTimestampInserter {
         }
 
         return Insertion(document: result, cursorRange: cursorRange)
+    }
+
+    private static func sanitizedSelectedContent(
+        _ selectedContent: NSAttributedString?
+    ) -> NSAttributedString? {
+        guard let selectedContent,
+              selectedContent.length > 0 else {
+            return nil
+        }
+
+        let sanitized = RichTextPasteSanitizer.sanitizedAttributedString(
+            selectedContent,
+            normalizesLists: true
+        )
+        return sanitized.length > 0 ? sanitized : nil
     }
 
     private static func timestampLine(_ timestamp: String) -> NSAttributedString {

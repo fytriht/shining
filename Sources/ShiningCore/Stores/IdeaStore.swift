@@ -76,12 +76,23 @@ public final class IdeaStore: ObservableObject {
         date: Date = Date(),
         selectedText: String? = nil
     ) -> NSRange {
+        let selectedContent = selectedText.flatMap { text in
+            text.isEmpty ? nil : RichTextPasteSanitizer.sanitizedPlainText(text)
+        }
+        return insertTimestamp(date: date, selectedContent: selectedContent)
+    }
+
+    @discardableResult
+    public func insertTimestamp(
+        date: Date = Date(),
+        selectedContent: NSAttributedString?
+    ) -> NSRange {
         cleanUpDocument()
 
         let timestamp = timestampFormatter.string(from: date)
         let insertion = IdeaTimestampInserter.insert(
             timestamp: timestamp,
-            selectedText: selectedText,
+            selectedContent: selectedContent,
             into: document
         )
 
@@ -110,8 +121,19 @@ public final class IdeaStore: ObservableObject {
         _ selectedText: String?,
         for pendingInsertion: PendingSelectionInsertion
     ) -> NSRange? {
-        guard let selectedText,
-              !selectedText.isEmpty,
+        let selectedContent = selectedText.flatMap { text in
+            text.isEmpty ? nil : RichTextPasteSanitizer.sanitizedPlainText(text)
+        }
+        return insertSelectedContent(selectedContent, for: pendingInsertion)
+    }
+
+    @discardableResult
+    public func insertSelectedContent(
+        _ selectedContent: NSAttributedString?,
+        for pendingInsertion: PendingSelectionInsertion
+    ) -> NSRange? {
+        guard let selectedContent,
+              selectedContent.length > 0,
               revision == pendingInsertion.revision,
               document.isEqual(to: pendingInsertion.documentAfterTimestamp),
               pendingInsertion.insertionRange.length == 0,
@@ -120,7 +142,14 @@ public final class IdeaStore: ObservableObject {
             return nil
         }
 
-        let selectedBody = RichTextDocument.bodyText(selectedText)
+        let selectedBody = RichTextPasteSanitizer.sanitizedAttributedString(
+            selectedContent,
+            normalizesLists: true
+        )
+        guard selectedBody.length > 0 else {
+            return nil
+        }
+
         let selectedRange = NSRange(
             location: pendingInsertion.insertionRange.location,
             length: selectedBody.length
