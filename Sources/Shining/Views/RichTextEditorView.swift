@@ -257,12 +257,16 @@ final class RichTextView: NSTextView {
         }
 
         let selectedRange = selectedRange()
-        guard shouldChangeText(in: selectedRange, replacementString: pastedContent.string) else {
+        let replacementContent = imageBlockInsertionContent(
+            pastedContent,
+            replacing: selectedRange
+        )
+        guard shouldChangeText(in: selectedRange, replacementString: replacementContent.string) else {
             return
         }
 
-        textStorage?.replaceCharacters(in: selectedRange, with: pastedContent)
-        setSelectedRange(NSRange(location: selectedRange.location + pastedContent.length, length: 0))
+        textStorage?.replaceCharacters(in: selectedRange, with: replacementContent)
+        setSelectedRange(NSRange(location: selectedRange.location + replacementContent.length, length: 0))
         didChangeText()
         constrainImageAttachmentsToTextWidth()
         typingAttributes = Self.defaultTypingAttributes
@@ -502,8 +506,7 @@ final class RichTextView: NSTextView {
 
     private func insertImages(_ urls: [URL], replacing range: NSRange) {
         let images = urls.compactMap(makeImageAttachment)
-        guard !images.isEmpty,
-              shouldChangeText(in: range, replacementString: nil) else {
+        guard !images.isEmpty else {
             return
         }
 
@@ -515,7 +518,13 @@ final class RichTextView: NSTextView {
             insertedText.append(NSAttributedString(attachment: attachment))
         }
 
-        textStorage?.replaceCharacters(in: range, with: insertedText)
+        let replacementContent = imageBlockInsertionContent(insertedText, replacing: range)
+        guard shouldChangeText(in: range, replacementString: replacementContent.string) else {
+            return
+        }
+
+        textStorage?.replaceCharacters(in: range, with: replacementContent)
+        setSelectedRange(NSRange(location: range.location + replacementContent.length, length: 0))
         didChangeText()
         constrainImageAttachmentsToTextWidth()
     }
@@ -582,6 +591,101 @@ final class RichTextView: NSTextView {
         setSelectedRange(NSRange(location: range.location, length: 0))
         didChangeText()
         return true
+    }
+
+    private func imageBlockInsertionContent(
+        _ content: NSAttributedString,
+        replacing range: NSRange
+    ) -> NSAttributedString {
+        guard containsAttachment(content),
+              let textStorage else {
+            return content
+        }
+
+        let currentString = textStorage.string as NSString
+        let result = NSMutableAttributedString()
+
+        if needsLeadingImageBlockSeparator(
+            before: range,
+            content: content,
+            in: currentString
+        ) {
+            result.append(Self.imageBlockSeparator())
+        }
+
+        result.append(content)
+
+        if needsTrailingImageBlockSeparator(
+            after: range,
+            content: content,
+            in: currentString
+        ) {
+            result.append(Self.imageBlockSeparator())
+        }
+
+        return result
+    }
+
+    private func needsLeadingImageBlockSeparator(
+        before range: NSRange,
+        content: NSAttributedString,
+        in currentString: NSString
+    ) -> Bool {
+        guard range.location > 0,
+              !startsWithNewline(content) else {
+            return false
+        }
+
+        return !isNewline(at: range.location - 1, in: currentString)
+    }
+
+    private func needsTrailingImageBlockSeparator(
+        after range: NSRange,
+        content: NSAttributedString,
+        in currentString: NSString
+    ) -> Bool {
+        guard !endsWithNewline(content) else {
+            return false
+        }
+
+        let upperBound = NSMaxRange(range)
+        guard upperBound < currentString.length else {
+            return true
+        }
+
+        return !isNewline(at: upperBound, in: currentString)
+    }
+
+    private func startsWithNewline(_ attributedString: NSAttributedString) -> Bool {
+        guard attributedString.length > 0 else {
+            return false
+        }
+
+        return isNewline(at: 0, in: attributedString.string as NSString)
+    }
+
+    private func endsWithNewline(_ attributedString: NSAttributedString) -> Bool {
+        guard attributedString.length > 0 else {
+            return false
+        }
+
+        return isNewline(
+            at: attributedString.length - 1,
+            in: attributedString.string as NSString
+        )
+    }
+
+    private func isNewline(at location: Int, in string: NSString) -> Bool {
+        guard location >= 0, location < string.length else {
+            return false
+        }
+
+        let character = string.substring(with: NSRange(location: location, length: 1))
+        return character.rangeOfCharacter(from: .newlines) != nil
+    }
+
+    private static func imageBlockSeparator() -> NSAttributedString {
+        NSAttributedString(string: "\n", attributes: defaultTypingAttributes)
     }
 
     private func makeImageAttachment(for fileURL: URL) -> NSTextAttachment? {
