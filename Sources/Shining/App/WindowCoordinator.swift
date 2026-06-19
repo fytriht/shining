@@ -137,6 +137,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 520, height: 360)
         window.delegate = self
+        configureLightweightChrome(for: window)
         configureAlwaysOnTopBehavior(for: window)
 
         if !window.setFrameUsingName(Self.mainWindowFrameAutosaveName) {
@@ -146,6 +147,14 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
 
         mainWindow = window
         return window
+    }
+
+    private func configureLightweightChrome(for window: NSWindow) {
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
+        window.backgroundColor = .textBackgroundColor
+        window.isMovableByWindowBackground = true
     }
 
     private func configureAlwaysOnTopBehavior(for window: NSWindow) {
