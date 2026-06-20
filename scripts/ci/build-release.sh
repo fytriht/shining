@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 APP_NAME="Shining"
 BUNDLE_ID="com.fytriht.shining"
-MIN_SYSTEM_VERSION="14.0"
+MIN_SYSTEM_VERSION="26.0"
 DIST_DIR="$ROOT_DIR/dist/release"
 APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"

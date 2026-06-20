@@ -16,9 +16,9 @@ Open Shining or press `Command + Option + Space` to bring up the editor window a
 
 ## Requirements
 
-- macOS 14 or later
-- Xcode command line tools
-- Swift 6 compatible toolchain
+- macOS 26 or later
+- Xcode 26 command line tools
+- Swift 6 toolchain
 
 ## Run
 

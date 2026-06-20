@@ -6,6 +6,7 @@ VERSION=""
 BUILD_NUMBER=""
 APP_NAME="Shining"
 BUNDLE_ID="com.fytriht.shining"
+MIN_SYSTEM_VERSION="26.0"
 SKIP_NOTARIZATION="${SHINING_SKIP_NOTARIZATION:-0}"
 SKIP_SIGNING="${SHINING_SKIP_SIGNING:-0}"
 
@@ -80,6 +81,7 @@ actual_bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INF
 actual_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO_PLIST")"
 actual_build="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO_PLIST")"
 actual_executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$INFO_PLIST")"
+actual_min_system_version="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$INFO_PLIST")"
 
 if [[ "$actual_bundle_id" != "$BUNDLE_ID" ]]; then
   echo "error: expected CFBundleIdentifier=$BUNDLE_ID, got $actual_bundle_id" >&2
@@ -98,6 +100,11 @@ fi
 
 if [[ "$actual_executable" != "$APP_NAME" ]]; then
   echo "error: expected CFBundleExecutable=$APP_NAME, got $actual_executable" >&2
+  exit 1
+fi
+
+if [[ "$actual_min_system_version" != "$MIN_SYSTEM_VERSION" ]]; then
+  echo "error: expected LSMinimumSystemVersion=$MIN_SYSTEM_VERSION, got $actual_min_system_version" >&2
   exit 1
 fi
 
