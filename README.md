@@ -2,11 +2,12 @@
 
 Shining is a small macOS app for timestamped idea journaling without breaking your workflow.
 
-Press `Command + Option + Space` to bring up the editor window and insert a timestamp at the top of your local editable idea file. The cursor lands below the timestamp so you can start typing immediately.
+Open Shining or press `Command + Option + Space` to bring up the editor window and insert a timestamp at the top of your local editable idea file. The cursor lands below the timestamp so you can start typing immediately.
 
 ## Features
 
 - Global hotkey: `Command + Option + Space`
+- Opening the app starts a new timestamped entry
 - Main editor window for writing, reviewing, and editing saved ideas
 - New timestamps are inserted at the top, newest first
 - Rich text editing with images

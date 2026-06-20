@@ -14,13 +14,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppMenuBuilder.installMainMenu()
         SystemSelectionService.requestSyntheticEventAccessIfNeeded()
         coordinator.start()
+        coordinator.openEditorAndInsertTimestamp(capturesSelection: false)
     }
 
     func applicationShouldHandleReopen(
         _ sender: NSApplication,
         hasVisibleWindows flag: Bool
     ) -> Bool {
-        coordinator.showMainWindow()
+        coordinator.handleReopen(hasVisibleWindows: flag)
         return true
     }
 

@@ -28,7 +28,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
         startDockBadgeUpdates()
 
         let hotKeyService = HotKeyService { [weak self] in
-            self?.showEditorAndInsertTimestamp()
+            self?.openEditorAndInsertTimestamp(capturesSelection: true)
         }
         hotKeyService.register()
         self.hotKeyService = hotKeyService
@@ -43,12 +43,25 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
         store.saveNow()
     }
 
-    func showEditorAndInsertTimestamp() {
-        if NSApp.isActive {
-            showEditorAndInsertTimestamp(selectedContent: nil)
+    func openEditorAndInsertTimestamp(capturesSelection: Bool) {
+        guard capturesSelection, !NSApp.isActive else {
+            insertTimestampAndShowEditor(selectedContent: nil)
             return
         }
 
+        openEditorAndInsertTimestampWithDelayedSelectionCapture()
+    }
+
+    func handleReopen(hasVisibleWindows: Bool) {
+        if shouldInsertTimestampOnReopen(hasVisibleWindows: hasVisibleWindows) {
+            openEditorAndInsertTimestamp(capturesSelection: false)
+            return
+        }
+
+        showMainWindow()
+    }
+
+    private func openEditorAndInsertTimestampWithDelayedSelectionCapture() {
         let delayedSelectionCapture = DelayedSelectionCapture()
         systemSelectionService.selectedContent { [weak self, delayedSelectionCapture] selectedContent in
             delayedSelectionCapture.selectedContent = selectedContent
@@ -76,9 +89,17 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
         showMainWindow(focusRange: insertion.cursorRange, cleanUpBeforeShowing: false)
     }
 
-    private func showEditorAndInsertTimestamp(selectedContent: NSAttributedString?) {
+    private func insertTimestampAndShowEditor(selectedContent: NSAttributedString?) {
         let cursorRange = store.insertTimestamp(selectedContent: selectedContent)
         showMainWindow(focusRange: cursorRange, cleanUpBeforeShowing: false)
+    }
+
+    private func shouldInsertTimestampOnReopen(hasVisibleWindows: Bool) -> Bool {
+        guard hasVisibleWindows, let mainWindow else {
+            return true
+        }
+
+        return !mainWindow.isVisible || mainWindow.isMiniaturized
     }
 
     private func insertDelayedSelection(
@@ -105,7 +126,11 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
 
         let window = mainWindow ?? makeMainWindow()
 
+        NSApp.unhide(nil)
         NSApp.activate(ignoringOtherApps: true)
+        if window.isMiniaturized {
+            window.deminiaturize(nil)
+        }
         window.makeKeyAndOrderFront(nil)
         editorFocusController.requestFocus(selectedRange: focusRange)
     }
