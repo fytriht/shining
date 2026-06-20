@@ -16,7 +16,7 @@ struct RichTextEditorView: NSViewRepresentable {
         document: NSAttributedString,
         revision: Int,
         focusRequest: RichTextEditorFocusRequest,
-        textContainerInset: NSSize = NSSize(width: 8, height: 8),
+        textContainerInset: NSSize = NSSize(width: 8, height: 0),
         onChange: @escaping (NSAttributedString) -> Void
     ) {
         self.document = document

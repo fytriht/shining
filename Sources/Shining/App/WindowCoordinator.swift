@@ -153,7 +153,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
         )
         let window = EscClosableWindow(
             contentRect: NSRect(x: 0, y: 0, width: 700, height: 520),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
