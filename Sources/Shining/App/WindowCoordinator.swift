@@ -178,7 +178,6 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.titlebarSeparatorStyle = .none
-        window.backgroundColor = .textBackgroundColor
         window.isMovableByWindowBackground = true
     }
 

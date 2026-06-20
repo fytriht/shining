@@ -34,6 +34,6 @@ struct MainEditorView: View {
         }
             .padding(0)
             .frame(minWidth: 520, minHeight: 360)
-            .background(Color(nsColor: .textBackgroundColor))
+            .containerBackground(.thickMaterial, for: .window)
     }
 }
