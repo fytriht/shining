@@ -105,26 +105,11 @@ struct RichTextEditorView: NSViewRepresentable {
             let location = min(max(0, selectedRange.location), documentLength)
             let length = min(max(0, selectedRange.length), documentLength - location)
             let clampedRange = NSRange(location: location, length: length)
-            let adjustedRange = adjustedCaretRange(clampedRange, in: textView)
-            textView.setSelectedRange(adjustedRange)
-            textView.scrollRangeToVisible(NSRange(location: adjustedRange.location, length: 0))
+            textView.setSelectedRange(clampedRange)
+            textView.scrollRangeToVisible(NSRange(location: location, length: 0))
         }
 
         textView.typingAttributes = RichTextView.defaultTypingAttributes
-    }
-
-    private static func adjustedCaretRange(
-        _ range: NSRange,
-        in textView: RichTextView
-    ) -> NSRange {
-        guard let textStorage = textView.textStorage else {
-            return range
-        }
-
-        return RichTextDocument.caretRangeAvoidingTimestampContent(
-            range,
-            in: NSAttributedString(attributedString: textStorage)
-        )
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
@@ -133,7 +118,6 @@ struct RichTextEditorView: NSViewRepresentable {
         var appliedFocusRequestID: Int
         var isApplyingExternalChange = false
         private var resetsTypingAttributesAfterChange = false
-        private var isAdjustingSelection = false
 
         init(_ parent: RichTextEditorView) {
             self.parent = parent
@@ -186,31 +170,13 @@ struct RichTextEditorView: NSViewRepresentable {
             resetsTypingAttributesAfterChange = false
             parent.onChange(NSAttributedString(attributedString: textStorage))
         }
-
         func textViewDidChangeSelection(_ notification: Notification) {
             guard !isApplyingExternalChange,
-                  !isAdjustingSelection,
-                  let textView = notification.object as? RichTextView,
-                  let textStorage = textView.textStorage else {
+                  let textView = notification.object as? RichTextView else {
                 return
             }
 
-            let selectedRange = textView.selectedRange()
             textView.invalidateImageAttachmentDisplay()
-            let adjustedRange = RichTextDocument.caretRangeAvoidingTimestampContent(
-                selectedRange,
-                in: NSAttributedString(attributedString: textStorage)
-            )
-            guard !NSEqualRanges(selectedRange, adjustedRange) else {
-                return
-            }
-
-            isAdjustingSelection = true
-            defer { isAdjustingSelection = false }
-
-            textView.setSelectedRange(adjustedRange)
-            textView.scrollRangeToVisible(NSRange(location: adjustedRange.location, length: 0))
-            textView.typingAttributes = RichTextView.defaultTypingAttributes
         }
     }
 }
