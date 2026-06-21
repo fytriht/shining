@@ -42,11 +42,25 @@ public enum RichTextDocument {
 
         if replacementString == "\n",
            range.length == 0,
-           isTimestampLineContentEnd(range.location, in: document) {
+           isTimestampLineContentBoundary(range.location, in: document) {
             return true
         }
 
         return isUserEditableRange(range, in: document)
+    }
+
+    public static func isTimestampLineContentBoundary(
+        _ location: Int,
+        in document: NSAttributedString
+    ) -> Bool {
+        guard location >= 0, location <= document.length else {
+            return false
+        }
+
+        return findTimestampLines(in: document).contains {
+            $0.contentRange.location == location ||
+                $0.contentRange.endLocation == location
+        }
     }
 
     public static func isTimestampLineContentEnd(

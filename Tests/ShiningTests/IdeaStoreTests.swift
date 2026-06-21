@@ -552,6 +552,74 @@ final class IdeaStoreTests: XCTestCase {
         )
     }
 
+    func testNewlineInsertionAtTimestampLineStartIsUserEditable() throws {
+        let timestamp = "2026-06-02 08:40"
+        let document = NSAttributedString(string: "\(timestamp)\n\nbody")
+
+        XCTAssertTrue(
+            RichTextDocument.isTimestampLineContentBoundary(
+                0,
+                in: document
+            )
+        )
+        XCTAssertTrue(
+            RichTextDocument.isUserEditableRange(
+                NSRange(location: 0, length: 0),
+                replacementString: "\n",
+                in: document
+            )
+        )
+        XCTAssertFalse(
+            RichTextDocument.isUserEditableRange(
+                NSRange(location: 0, length: 0),
+                replacementString: "x",
+                in: document
+            )
+        )
+        XCTAssertFalse(
+            RichTextDocument.isUserEditableRange(
+                NSRange(location: 2, length: 0),
+                replacementString: "\n",
+                in: document
+            )
+        )
+        XCTAssertFalse(
+            RichTextDocument.isUserEditableRange(
+                NSRange(location: 0, length: 1),
+                replacementString: "\n",
+                in: document
+            )
+        )
+    }
+
+    func testNewlineInsertionAtLaterTimestampLineStartIsUserEditable() throws {
+        let documentString = [
+            "2026-06-02 08:41",
+            "newer",
+            "",
+            "2026-06-02 08:40",
+            "older"
+        ].joined(separator: "\n")
+        let document = NSAttributedString(string: documentString)
+        let timestampLocation = (documentString as NSString)
+            .range(of: "2026-06-02 08:40")
+            .location
+
+        XCTAssertTrue(
+            RichTextDocument.isTimestampLineContentBoundary(
+                timestampLocation,
+                in: document
+            )
+        )
+        XCTAssertTrue(
+            RichTextDocument.isUserEditableRange(
+                NSRange(location: timestampLocation, length: 0),
+                replacementString: "\n",
+                in: document
+            )
+        )
+    }
+
     func testNewlineInsertionAtUnterminatedTimestampLineEndIsUserEditable() throws {
         let timestamp = "2026-06-02 08:40"
         let document = NSAttributedString(string: timestamp)

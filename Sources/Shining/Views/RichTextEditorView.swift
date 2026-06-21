@@ -150,7 +150,7 @@ struct RichTextEditorView: NSViewRepresentable {
             resetsTypingAttributesAfterChange = isEditable &&
                 replacementString == "\n" &&
                 affectedCharRange.length == 0 &&
-                RichTextDocument.isTimestampLineContentEnd(
+                RichTextDocument.isTimestampLineContentBoundary(
                     affectedCharRange.location,
                     in: document
                 )
