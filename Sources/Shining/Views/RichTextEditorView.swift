@@ -223,6 +223,15 @@ final class RichTextView: NSTextView {
     private static let minimumImageAvailableWidth: CGFloat = 120
     private static let imageHorizontalPadding: CGFloat = 8
     private static let timestampDeleteButtonSize = NSSize(width: 22, height: 22)
+    private static let deleteKeyCode: UInt16 = 51
+    private static let forwardDeleteKeyCode: UInt16 = 117
+    private static let commandShiftModifiers: NSEvent.ModifierFlags = [.command, .shift]
+    private static let commandShortcutModifierMask: NSEvent.ModifierFlags = [
+        .command,
+        .control,
+        .option,
+        .shift
+    ]
 
     private let timestampDeleteOverlayView = TimestampDeleteOverlayView()
     private var hoverTrackingArea: NSTrackingArea?
@@ -270,6 +279,13 @@ final class RichTextView: NSTextView {
         }
     }
 
+    @objc func deleteCurrentTimestampBlock(_ sender: Any?) {
+        guard deleteCurrentTimestampBlockAtSelection() else {
+            NSSound.beep()
+            return
+        }
+    }
+
     override func paste(_ sender: Any?) {
         guard let pastedContent = sanitizedPasteboardContents(from: .general),
               pastedContent.length > 0 else {
@@ -290,6 +306,24 @@ final class RichTextView: NSTextView {
         didChangeText()
         constrainImageAttachmentsToTextWidth()
         typingAttributes = Self.defaultTypingAttributes
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard isDeleteCurrentTimestampBlockShortcut(event) else {
+            return super.performKeyEquivalent(with: event)
+        }
+
+        handleDeleteCurrentTimestampBlockShortcut(event)
+        return true
+    }
+
+    override func keyDown(with event: NSEvent) {
+        guard isDeleteCurrentTimestampBlockShortcut(event) else {
+            super.keyDown(with: event)
+            return
+        }
+
+        handleDeleteCurrentTimestampBlockShortcut(event)
     }
 
     override func deleteBackward(_ sender: Any?) {
@@ -647,6 +681,45 @@ final class RichTextView: NSTextView {
         let document = NSAttributedString(attributedString: textStorage)
         guard let deletionRange = RichTextDocument.timestampLineDeletionRangeForForwardDelete(
             at: selectedRange().location,
+            in: document
+        ) else {
+            return false
+        }
+
+        return deleteCharacters(in: deletionRange)
+    }
+
+    private func handleDeleteCurrentTimestampBlockShortcut(_ event: NSEvent) {
+        guard !event.isARepeat else {
+            return
+        }
+
+        deleteCurrentTimestampBlock(event)
+    }
+
+    private func isDeleteCurrentTimestampBlockShortcut(_ event: NSEvent) -> Bool {
+        guard event.type == .keyDown else {
+            return false
+        }
+
+        let commandModifiers = event.modifierFlags.intersection(Self.commandShortcutModifierMask)
+        guard commandModifiers == Self.commandShiftModifiers else {
+            return false
+        }
+
+        return event.keyCode == Self.deleteKeyCode ||
+            event.keyCode == Self.forwardDeleteKeyCode ||
+            event.specialKey == .delete
+    }
+
+    private func deleteCurrentTimestampBlockAtSelection() -> Bool {
+        guard let textStorage else {
+            return false
+        }
+
+        let document = NSAttributedString(attributedString: textStorage)
+        guard let deletionRange = RichTextDocument.timestampBlockDeletionRange(
+            containing: selectedRange().location,
             in: document
         ) else {
             return false
