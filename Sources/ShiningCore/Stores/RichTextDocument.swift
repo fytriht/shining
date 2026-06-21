@@ -123,6 +123,32 @@ public enum RichTextDocument {
             .lineRange
     }
 
+    public static func timestampBlockRange(
+        containing location: Int,
+        in document: NSAttributedString
+    ) -> NSRange? {
+        timestampBlock(containing: location, in: document)?.range
+    }
+
+    public static func timestampBlockDeletionRange(
+        containing location: Int,
+        in document: NSAttributedString
+    ) -> NSRange? {
+        guard let block = timestampBlock(containing: location, in: document) else {
+            return nil
+        }
+
+        guard block.nextLine == nil,
+              block.timestampLine.lineRange.location > 0 else {
+            return block.range
+        }
+
+        return rangeByIncludingLeadingWhitespace(
+            before: block.range,
+            in: document.string as NSString
+        )
+    }
+
     public static func cleaned(_ document: NSAttributedString) -> NSAttributedString {
         let timestampLines = findTimestampLines(in: document)
         guard !timestampLines.isEmpty else {
@@ -274,6 +300,19 @@ public enum RichTextDocument {
         return NSRange(location: start, length: end - start)
     }
 
+    private static func rangeByIncludingLeadingWhitespace(
+        before range: NSRange,
+        in string: NSString
+    ) -> NSRange {
+        var start = range.location
+
+        while start > 0, isWhitespace(string.character(at: start - 1)) {
+            start -= 1
+        }
+
+        return NSRange(location: start, length: range.endLocation - start)
+    }
+
     private static func isWhitespace(_ character: unichar) -> Bool {
         guard let scalar = UnicodeScalar(Int(character)) else {
             return false
@@ -330,6 +369,40 @@ public enum RichTextDocument {
         return lines
     }
 
+    private static func timestampBlock(
+        containing location: Int,
+        in document: NSAttributedString
+    ) -> TimestampBlock? {
+        guard location >= 0, location <= document.length else {
+            return nil
+        }
+
+        let timestampLines = findTimestampLines(in: document)
+        for index in timestampLines.indices {
+            let timestampLine = timestampLines[index]
+            let nextIndex = timestampLines.index(after: index)
+            let nextLine = nextIndex < timestampLines.endIndex ? timestampLines[nextIndex] : nil
+            let endLocation = nextLine?.lineRange.location ?? document.length
+            let containsLocation = location >= timestampLine.lineRange.location &&
+                (location < endLocation || (location == document.length && endLocation == document.length))
+
+            guard containsLocation else {
+                continue
+            }
+
+            return TimestampBlock(
+                timestampLine: timestampLine,
+                nextLine: nextLine,
+                range: NSRange(
+                    location: timestampLine.lineRange.location,
+                    length: endLocation - timestampLine.lineRange.location
+                )
+            )
+        }
+
+        return nil
+    }
+
     private static func isTimestampLine(_ line: String) -> Bool {
         guard line.count == 16 else {
             return false
@@ -353,6 +426,12 @@ public enum RichTextDocument {
         }
 
         return scalar.value >= 48 && scalar.value <= 57
+    }
+
+    private struct TimestampBlock {
+        let timestampLine: TimestampLine
+        let nextLine: TimestampLine?
+        let range: NSRange
     }
 
     private struct TimestampLine {

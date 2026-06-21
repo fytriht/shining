@@ -25,7 +25,7 @@ public enum RichTextFormatting {
 
     public static var timestampFont: NSFont {
         NSFont.monospacedDigitSystemFont(
-            ofSize: NSFont.smallSystemFontSize,
+            ofSize: 11,
             weight: .regular
         )
     }

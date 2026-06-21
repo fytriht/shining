@@ -77,6 +77,7 @@ struct RichTextEditorView: NSViewRepresentable {
             context.coordinator.isApplyingExternalChange = true
             textView.textStorage?.setAttributedString(document)
             textView.constrainImageAttachmentsToTextWidth()
+            textView.invalidateTimestampBlockHover()
             context.coordinator.isApplyingExternalChange = false
             context.coordinator.appliedRevision = revision
         }
@@ -164,6 +165,7 @@ struct RichTextEditorView: NSViewRepresentable {
             }
 
             textView.constrainImageAttachmentsToTextWidth()
+            textView.invalidateTimestampBlockHover()
             if resetsTypingAttributesAfterChange {
                 textView.typingAttributes = RichTextView.defaultTypingAttributes
             }
@@ -216,6 +218,11 @@ final class RichTextView: NSTextView {
     private static let imageDisplayScale: CGFloat = 0.5
     private static let minimumImageAvailableWidth: CGFloat = 120
     private static let imageHorizontalPadding: CGFloat = 8
+    private static let timestampDeleteButtonSize = NSSize(width: 22, height: 22)
+
+    private let timestampDeleteOverlayView = TimestampDeleteOverlayView()
+    private var hoverTrackingArea: NSTrackingArea?
+    private var hoveredTimestampBlock: HoveredTimestampBlock?
 
     static var defaultTypingAttributes: [NSAttributedString.Key: Any] {
         RichTextFormatting.bodyAttributes
@@ -300,6 +307,58 @@ final class RichTextView: NSTextView {
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         constrainImageAttachmentsToTextWidth()
+        repositionTimestampDeleteButton()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.acceptsMouseMovedEvents = true
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+
+        let trackingArea = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(trackingArea)
+        hoverTrackingArea = trackingArea
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        updateTimestampDeleteButton(for: event)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        guard isHoveringTimestampDeleteButton(at: point) else {
+            super.mouseDown(with: event)
+            return
+        }
+
+        NSCursor.arrow.set()
+        deleteHoveredTimestampBlock()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        invalidateTimestampBlockHover()
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+
+        if let hoveredTimestampBlock {
+            addCursorRect(hoveredTimestampBlock.buttonFrame, cursor: .arrow)
+        }
     }
 
     func constrainImageAttachmentsToTextWidth() {
@@ -345,6 +404,7 @@ final class RichTextView: NSTextView {
                 actualCharacterRange: nil
             )
             layoutManager?.invalidateDisplay(forCharacterRange: fullRange)
+            repositionTimestampDeleteButton()
         } else if didChangeAttachmentDisplay {
             layoutManager?.invalidateDisplay(forCharacterRange: fullRange)
         }
@@ -390,6 +450,7 @@ final class RichTextView: NSTextView {
         usesAdaptiveColorMappingForDarkAppearance = true
         font = RichTextFormatting.bodyFont
         typingAttributes = Self.defaultTypingAttributes
+        configureTimestampDeleteOverlayView()
     }
 
     private func sanitizedPasteboardContents(from pasteboard: NSPasteboard) -> NSAttributedString? {
@@ -598,7 +659,178 @@ final class RichTextView: NSTextView {
         textStorage?.replaceCharacters(in: range, with: "")
         setSelectedRange(NSRange(location: range.location, length: 0))
         didChangeText()
+        invalidateTimestampBlockHover()
         return true
+    }
+
+    func invalidateTimestampBlockHover() {
+        hoveredTimestampBlock = nil
+        timestampDeleteOverlayView.setHovered(false)
+        setTimestampDeleteOverlayFrame(nil)
+    }
+
+    private func configureTimestampDeleteOverlayView() {
+        timestampDeleteOverlayView.isHidden = true
+        addSubview(timestampDeleteOverlayView)
+    }
+
+    private func updateTimestampDeleteButton(for event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if isHoveringTimestampDeleteButton(at: point) {
+            timestampDeleteOverlayView.setHovered(true)
+            NSCursor.arrow.set()
+            return
+        }
+
+        timestampDeleteOverlayView.setHovered(false)
+
+        guard let textStorage,
+              let characterIndex = hoveredCharacterIndex(for: event) else {
+            invalidateTimestampBlockHover()
+            return
+        }
+
+        let document = NSAttributedString(attributedString: textStorage)
+        guard let blockRange = RichTextDocument.timestampBlockRange(
+            containing: characterIndex,
+            in: document
+        ),
+              let deletionRange = RichTextDocument.timestampBlockDeletionRange(
+                  containing: characterIndex,
+                  in: document
+              ) else {
+            invalidateTimestampBlockHover()
+            return
+        }
+
+        guard let buttonFrame = makeTimestampDeleteButtonFrame(for: blockRange) else {
+            invalidateTimestampBlockHover()
+            return
+        }
+
+        hoveredTimestampBlock = HoveredTimestampBlock(
+            range: blockRange,
+            deletionRange: deletionRange,
+            buttonFrame: buttonFrame
+        )
+        setTimestampDeleteOverlayFrame(buttonFrame)
+        timestampDeleteOverlayView.setHovered(buttonFrame.contains(point))
+    }
+
+    private func isHoveringTimestampDeleteButton(at point: NSPoint) -> Bool {
+        hoveredTimestampBlock?.buttonFrame.contains(point) ?? false
+    }
+
+    private func hoveredCharacterIndex(for event: NSEvent) -> Int? {
+        guard let textStorage,
+              textStorage.length > 0,
+              let layoutManager,
+              let textContainer else {
+            return nil
+        }
+
+        layoutManager.ensureLayout(for: textContainer)
+
+        let point = convert(event.locationInWindow, from: nil)
+        let origin = textContainerOrigin
+        let containerPoint = NSPoint(
+            x: point.x - origin.x,
+            y: point.y - origin.y
+        )
+        let usedRect = layoutManager.usedRect(for: textContainer)
+        guard containerPoint.y >= usedRect.minY - 6,
+              containerPoint.y <= usedRect.maxY + 6,
+              containerPoint.x >= -20,
+              containerPoint.x <= textContainer.containerSize.width + 20 else {
+            return nil
+        }
+
+        let glyphIndex = layoutManager.glyphIndex(
+            for: containerPoint,
+            in: textContainer
+        )
+        guard glyphIndex < layoutManager.numberOfGlyphs else {
+            return textStorage.length
+        }
+
+        return layoutManager.characterIndexForGlyph(at: glyphIndex)
+    }
+
+    private func repositionTimestampDeleteButton() {
+        guard let hoveredTimestampBlock,
+              let buttonFrame = makeTimestampDeleteButtonFrame(for: hoveredTimestampBlock.range) else {
+            return
+        }
+
+        self.hoveredTimestampBlock = HoveredTimestampBlock(
+            range: hoveredTimestampBlock.range,
+            deletionRange: hoveredTimestampBlock.deletionRange,
+            buttonFrame: buttonFrame
+        )
+        setTimestampDeleteOverlayFrame(buttonFrame)
+    }
+
+    private func makeTimestampDeleteButtonFrame(for blockRange: NSRange) -> NSRect? {
+        guard let textStorage,
+              blockRange.location < textStorage.length,
+              let layoutManager else {
+            return nil
+        }
+
+        let titleRange = NSRange(location: blockRange.location, length: 1)
+        layoutManager.ensureLayout(forCharacterRange: titleRange)
+        let glyphRange = layoutManager.glyphRange(
+            forCharacterRange: titleRange,
+            actualCharacterRange: nil
+        )
+        guard glyphRange.length > 0,
+              glyphRange.location < layoutManager.numberOfGlyphs else {
+            return nil
+        }
+
+        let lineRect = layoutManager.lineFragmentUsedRect(
+            forGlyphAt: glyphRange.location,
+            effectiveRange: nil
+        )
+        let size = Self.timestampDeleteButtonSize
+        let origin = textContainerOrigin
+        let proposedX = origin.x + lineRect.maxX + 8
+        let maximumX = max(origin.x, bounds.width - size.width - 10)
+        let x = min(max(proposedX, origin.x), maximumX)
+        let y = origin.y + lineRect.minY + (lineRect.height - size.height) / 2
+
+        return NSRect(
+            x: x.rounded(.down),
+            y: y.rounded(.down),
+            width: size.width,
+            height: size.height
+        )
+    }
+
+    private func deleteHoveredTimestampBlock() {
+        guard let deletionRange = hoveredTimestampBlock?.deletionRange else {
+            return
+        }
+
+        _ = deleteCharacters(in: deletionRange)
+    }
+
+    private func invalidateTimestampDeleteButtonCursorRect() {
+        guard let window else {
+            return
+        }
+
+        window.invalidateCursorRects(for: self)
+    }
+
+    private func setTimestampDeleteOverlayFrame(_ frame: NSRect?) {
+        if let frame {
+            timestampDeleteOverlayView.frame = frame
+            timestampDeleteOverlayView.isHidden = false
+        } else {
+            timestampDeleteOverlayView.isHidden = true
+        }
+        invalidateTimestampDeleteButtonCursorRect()
     }
 
     private func imageBlockInsertionContent(
@@ -776,6 +1008,76 @@ final class RichTextView: NSTextView {
     private struct PasteboardImageAttachment {
         let attachment: NSTextAttachment
         let sourceURL: URL?
+    }
+
+    private struct HoveredTimestampBlock {
+        let range: NSRange
+        let deletionRange: NSRange
+        let buttonFrame: NSRect
+    }
+}
+
+private final class TimestampDeleteOverlayView: NSView {
+    private static let iconSize: CGFloat = 11
+
+    private let imageView = NSImageView()
+    private var isHovered = false
+
+    override var isFlipped: Bool {
+        true
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        configure()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        configure()
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+
+    override func layout() {
+        super.layout()
+        imageView.frame = NSRect(
+            x: (bounds.width - Self.iconSize) / 2,
+            y: (bounds.height - Self.iconSize) / 2,
+            width: Self.iconSize,
+            height: Self.iconSize
+        )
+    }
+
+    func setHovered(_ isHovered: Bool) {
+        guard self.isHovered != isHovered else {
+            return
+        }
+
+        self.isHovered = isHovered
+        layer?.backgroundColor = isHovered
+            ? NSColor.labelColor.withAlphaComponent(0.05).cgColor
+            : NSColor.clear.cgColor
+    }
+
+    private func configure() {
+        wantsLayer = true
+        layer?.cornerRadius = 6
+        layer?.masksToBounds = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+
+        imageView.imageScaling = .scaleProportionallyDown
+        imageView.contentTintColor = .secondaryLabelColor
+        if let trashImage = NSImage(
+            systemSymbolName: "trash",
+            accessibilityDescription: "Delete time block"
+        ) {
+            let configuration = NSImage.SymbolConfiguration(pointSize: Self.iconSize, weight: .regular)
+            imageView.image = trashImage.withSymbolConfiguration(configuration) ?? trashImage
+        }
+        addSubview(imageView)
     }
 }
 

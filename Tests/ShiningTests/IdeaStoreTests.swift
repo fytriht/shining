@@ -679,6 +679,89 @@ final class IdeaStoreTests: XCTestCase {
         )
     }
 
+    func testTimestampBlockRangeForFirstBlockEndsBeforeNextTimestamp() throws {
+        let documentString = [
+            "2026-06-02 08:41",
+            "newer",
+            "",
+            "2026-06-02 08:40",
+            "older"
+        ].joined(separator: "\n")
+        let document = NSAttributedString(string: documentString)
+        let string = documentString as NSString
+        let range = try XCTUnwrap(
+            RichTextDocument.timestampBlockRange(
+                containing: string.range(of: "newer").location,
+                in: document
+            )
+        )
+
+        XCTAssertEqual(string.substring(with: range), "2026-06-02 08:41\nnewer\n\n")
+    }
+
+    func testTimestampBlockDeletionRangeForMiddleBlockLeavesNeighborsAdjacent() throws {
+        let documentString = [
+            "2026-06-02 08:42",
+            "latest",
+            "",
+            "2026-06-02 08:41",
+            "middle",
+            "",
+            "2026-06-02 08:40",
+            "older"
+        ].joined(separator: "\n")
+        let document = NSAttributedString(string: documentString)
+        let string = documentString as NSString
+        let range = try XCTUnwrap(
+            RichTextDocument.timestampBlockDeletionRange(
+                containing: string.range(of: "middle").location,
+                in: document
+            )
+        )
+        let result = NSMutableAttributedString(attributedString: document)
+
+        result.deleteCharacters(in: range)
+
+        XCTAssertEqual(
+            result.string,
+            "2026-06-02 08:42\nlatest\n\n2026-06-02 08:40\nolder"
+        )
+    }
+
+    func testTimestampBlockDeletionRangeForLastBlockRemovesLeadingSeparator() throws {
+        let documentString = [
+            "2026-06-02 08:41",
+            "newer",
+            "",
+            "2026-06-02 08:40",
+            "older"
+        ].joined(separator: "\n")
+        let document = NSAttributedString(string: documentString)
+        let string = documentString as NSString
+        let range = try XCTUnwrap(
+            RichTextDocument.timestampBlockDeletionRange(
+                containing: string.range(of: "older").location,
+                in: document
+            )
+        )
+        let result = NSMutableAttributedString(attributedString: document)
+
+        result.deleteCharacters(in: range)
+
+        XCTAssertEqual(result.string, "2026-06-02 08:41\nnewer")
+    }
+
+    func testTimestampBlockRangeReturnsNilOutsideTimestampBlocks() throws {
+        let document = NSAttributedString(string: "prefix\n\n2026-06-02 08:40\nbody")
+
+        XCTAssertNil(
+            RichTextDocument.timestampBlockRange(
+                containing: 0,
+                in: document
+            )
+        )
+    }
+
     func testTimestampLineDeletionRangeForBackwardDelete() throws {
         let timestamp = "2026-06-02 08:40"
         let document = NSAttributedString(string: "\(timestamp)\n\nbody")
