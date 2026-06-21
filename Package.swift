@@ -22,7 +22,7 @@ let package = Package(
         ),
         .testTarget(
             name: "ShiningTests",
-            dependencies: ["ShiningCore"],
+            dependencies: ["Shining", "ShiningCore"],
             path: "Tests/ShiningTests"
         )
     ],

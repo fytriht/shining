@@ -136,6 +136,10 @@ struct RichTextEditorView: NSViewRepresentable {
                   let textStorage = textView.textStorage else {
                 return true
             }
+            if let undoManager = textView.undoManager,
+               undoManager.isUndoing || undoManager.isRedoing {
+                return true
+            }
 
             let document = NSAttributedString(attributedString: textStorage)
             let isEditable = RichTextDocument.isUserEditableRange(
