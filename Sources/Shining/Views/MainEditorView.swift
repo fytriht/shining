@@ -34,6 +34,7 @@ struct MainEditorView: View {
         }
             .padding(0)
             .frame(minWidth: 520, minHeight: 360)
+            .background(.thickMaterial)
             .containerBackground(.thickMaterial, for: .window)
     }
 }

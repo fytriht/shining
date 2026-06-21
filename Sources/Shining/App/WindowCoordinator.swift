@@ -157,8 +157,11 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
+        let hostingController = NSHostingController(rootView: view)
+        configureTransparentHostingView(hostingController.view)
+
         window.title = ShiningApp.name
-        window.contentViewController = NSHostingController(rootView: view)
+        window.contentViewController = hostingController
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 520, height: 360)
         window.delegate = self
@@ -178,7 +181,14 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.titlebarSeparatorStyle = .none
+        window.isOpaque = false
+        window.backgroundColor = .clear
         window.isMovableByWindowBackground = true
+    }
+
+    private func configureTransparentHostingView(_ view: NSView) {
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.clear.cgColor
     }
 
     private func configureAlwaysOnTopBehavior(for window: NSWindow) {
