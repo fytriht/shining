@@ -208,7 +208,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
         dockBadgeCancellable = store.$savedTimestampBlockCount
             .receive(on: RunLoop.main)
             .sink { count in
-                NSApp.dockTile.badgeLabel = count > 0 ? String(count) : nil
+                NSApp.dockTile.badgeLabel = count > 0 ? " " : nil
             }
     }
 }
