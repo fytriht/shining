@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import ShiningCore
 import SwiftUI
@@ -34,7 +35,14 @@ struct MainEditorView: View {
         }
             .padding(0)
             .frame(minWidth: 520, minHeight: 360)
-            .background(.thickMaterial)
-            .containerBackground(.thickMaterial, for: .window)
+            .background {
+                ZStack {
+                    Rectangle()
+                        .fill(.thickMaterial)
+                    Rectangle()
+                        .fill(Color(nsColor: .textBackgroundColor).opacity(0.68))
+                }
+                .ignoresSafeArea()
+            }
     }
 }
