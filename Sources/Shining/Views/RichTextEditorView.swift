@@ -170,7 +170,7 @@ struct RichTextEditorView: NSViewRepresentable {
 
             textView.constrainImageAttachmentsToTextWidth()
             textView.invalidateTimestampBlockHover()
-            if resetsTypingAttributesAfterChange {
+            if textStorage.length == 0 || resetsTypingAttributesAfterChange {
                 textView.typingAttributes = RichTextView.defaultTypingAttributes
             }
             resetsTypingAttributesAfterChange = false

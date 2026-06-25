@@ -92,6 +92,24 @@ final class RichTextEditorUndoTests: XCTestCase {
         XCTAssertEqual(fixture.textView.string, makeDocumentStringAfterDeletingMiddleBlock())
     }
 
+    @MainActor
+    func testTypingAfterClearingWholeDocumentUsesBodyAttributes() throws {
+        let document = makeTimestampDocument()
+        let fixture = makeEditorFixture(document: document)
+        let typedText = "fresh note"
+
+        fixture.textView.typingAttributes = RichTextFormatting.timestampAttributes
+        fixture.textView.setSelectedRange(NSRange(location: 0, length: document.length))
+        fixture.textView.deleteBackward(nil)
+        fixture.textView.insertText(typedText, replacementRange: fixture.textView.selectedRange())
+
+        XCTAssertEqual(fixture.textView.string, typedText)
+        try assertUsesBodyAttributes(
+            fixture.textView.attributedString(),
+            in: NSRange(location: 0, length: typedText.utf16.count)
+        )
+    }
+
     private func makeThreeBlockDocumentString() -> String {
         [
             "2026-06-02 08:42",
@@ -103,6 +121,20 @@ final class RichTextEditorUndoTests: XCTestCase {
             "2026-06-02 08:40",
             "older"
         ].joined(separator: "\n")
+    }
+
+    private func makeTimestampDocument() -> NSAttributedString {
+        let document = NSMutableAttributedString(
+            string: "2026-06-02 08:42\n",
+            attributes: RichTextFormatting.timestampAttributes
+        )
+        document.append(
+            NSAttributedString(
+                string: "latest",
+                attributes: RichTextFormatting.bodyAttributes
+            )
+        )
+        return document
     }
 
     private func makeDocumentStringAfterDeletingMiddleBlock() -> String {
@@ -123,9 +155,19 @@ final class RichTextEditorUndoTests: XCTestCase {
         window: NSWindow,
         coordinator: RichTextEditorView.Coordinator
     ) {
+        makeEditorFixture(document: NSAttributedString(string: documentString))
+    }
+
+    @MainActor
+    private func makeEditorFixture(
+        document: NSAttributedString
+    ) -> (
+        textView: RichTextView,
+        window: NSWindow,
+        coordinator: RichTextEditorView.Coordinator
+    ) {
         _ = NSApplication.shared
 
-        let document = NSAttributedString(string: documentString)
         let textView = RichTextView(frame: NSRect(x: 0, y: 0, width: 500, height: 400))
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 500, height: 400),
@@ -147,6 +189,43 @@ final class RichTextEditorUndoTests: XCTestCase {
         textView.textStorage?.setAttributedString(document)
 
         return (textView, window, coordinator)
+    }
+
+    private func assertUsesBodyAttributes(
+        _ document: NSAttributedString,
+        in range: NSRange,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
+        let isValid = range.location >= 0 &&
+            range.length >= 0 &&
+            range.location <= document.length &&
+            range.length <= document.length - range.location
+        _ = try XCTUnwrap(isValid ? true : nil, "Invalid range \(range)", file: file, line: line)
+
+        document.enumerateAttributes(in: range) { attributes, effectiveRange, _ in
+            let text = (document.string as NSString).substring(with: effectiveRange)
+            guard !text.isEmpty else {
+                return
+            }
+
+            guard let font = attributes[.font] as? NSFont else {
+                XCTFail("Missing body font", file: file, line: line)
+                return
+            }
+            XCTAssertEqual(font.pointSize, 14, accuracy: 0.001, file: file, line: line)
+
+            let color = attributes[.foregroundColor] as? NSColor
+            XCTAssertTrue(color?.isEqual(NSColor.labelColor) ?? false, file: file, line: line)
+
+            guard let paragraphStyle = attributes[.paragraphStyle] as? NSParagraphStyle else {
+                XCTFail("Missing body paragraph style", file: file, line: line)
+                return
+            }
+            XCTAssertEqual(paragraphStyle.minimumLineHeight, 22, accuracy: 0.001, file: file, line: line)
+            XCTAssertEqual(paragraphStyle.maximumLineHeight, 22, accuracy: 0.001, file: file, line: line)
+            XCTAssertEqual(paragraphStyle.paragraphSpacing, 7, accuracy: 0.001, file: file, line: line)
+        }
     }
 
     private func makeCommandShiftDeleteEvent(window: NSWindow) throws -> NSEvent {
