@@ -417,7 +417,7 @@ public enum RichTextDocument {
         return nil
     }
 
-    private static func isTimestampLine(_ line: String) -> Bool {
+    static func isTimestampLine(_ line: String) -> Bool {
         guard line.count == 16 else {
             return false
         }

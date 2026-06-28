@@ -57,6 +57,21 @@ final class RichTextPasteSanitizerTests: XCTestCase {
         assertUsesDefaultTextAttributes(document)
     }
 
+    func testPlainTextTimestampLinesUseTimestampAttributes() throws {
+        let timestamp = "2026-06-28 15:41"
+        let body = "test 1"
+        let document = RichTextPasteSanitizer.sanitizedPlainText("\(timestamp)\n\(body)")
+
+        XCTAssertEqual(document.string, "\(timestamp)\n\(body)")
+        try assertUsesTimestampAttributes(document, at: 0)
+        try assertUsesTimestampAttributes(document, at: timestamp.utf16.count)
+        assertUsesDefaultTextAttributes(
+            document.attributedSubstring(
+                from: NSRange(location: timestamp.utf16.count + 1, length: body.utf16.count)
+            )
+        )
+    }
+
     func testPasteboardRichTextTrimsOuterWhitespace() throws {
         let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
         defer { pasteboard.releaseGlobally() }
@@ -80,6 +95,40 @@ final class RichTextPasteSanitizerTests: XCTestCase {
 
         XCTAssertEqual(document.string, "Styled")
         assertUsesDefaultTextAttributes(document)
+    }
+
+    func testPasteboardRichTextTimestampLinesUseTimestampAttributes() throws {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
+        defer { pasteboard.releaseGlobally() }
+        pasteboard.clearContents()
+        let timestamp = "2026-06-28 15:41"
+        let body = "test 1"
+        let source = NSAttributedString(
+            string: "\(timestamp)\n\(body)",
+            attributes: [
+                .font: NSFont.boldSystemFont(ofSize: 28),
+                .foregroundColor: NSColor.red,
+                .link: URL(string: "https://example.com")!
+            ]
+        )
+        let data = try XCTUnwrap(
+            source.rtf(
+                from: NSRange(location: 0, length: source.length),
+                documentAttributes: [:]
+            )
+        )
+        XCTAssertTrue(pasteboard.setData(data, forType: .rtf))
+
+        let document = try XCTUnwrap(RichTextPasteSanitizer.sanitizedPasteboardText(from: pasteboard))
+
+        XCTAssertEqual(document.string, "\(timestamp)\n\(body)")
+        try assertUsesTimestampAttributes(document, at: 0)
+        try assertUsesTimestampAttributes(document, at: timestamp.utf16.count)
+        assertUsesDefaultTextAttributes(
+            document.attributedSubstring(
+                from: NSRange(location: timestamp.utf16.count + 1, length: body.utf16.count)
+            )
+        )
     }
 
     func testWhitespaceOnlyPasteboardTextIsIgnored() {
@@ -157,6 +206,50 @@ final class RichTextPasteSanitizerTests: XCTestCase {
         XCTAssertEqual(document.string, "\u{fffc}")
         XCTAssertTrue(containsAttachment(document))
     }
+}
+
+private func assertUsesTimestampAttributes(
+    _ document: NSAttributedString,
+    at location: Int,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) throws {
+    let font = try XCTUnwrap(
+        document.attribute(.font, at: location, effectiveRange: nil) as? NSFont,
+        file: file,
+        line: line
+    )
+    XCTAssertEqual(font.pointSize, 11, accuracy: 0.001, file: file, line: line)
+    assertRegularFontWeight(font, file: file, line: line)
+
+    let color = try XCTUnwrap(
+        document.attribute(.foregroundColor, at: location, effectiveRange: nil) as? NSColor,
+        file: file,
+        line: line
+    )
+    XCTAssertTrue(color.isEqual(NSColor.secondaryLabelColor), file: file, line: line)
+
+    let paragraphStyle = try XCTUnwrap(
+        document.attribute(.paragraphStyle, at: location, effectiveRange: nil) as? NSParagraphStyle,
+        file: file,
+        line: line
+    )
+    XCTAssertEqual(paragraphStyle.minimumLineHeight, 22, accuracy: 0.001, file: file, line: line)
+    XCTAssertEqual(paragraphStyle.maximumLineHeight, 22, accuracy: 0.001, file: file, line: line)
+    XCTAssertEqual(paragraphStyle.paragraphSpacing, 0, accuracy: 0.001, file: file, line: line)
+
+    let baselineOffset = try XCTUnwrap(
+        document.attribute(.baselineOffset, at: location, effectiveRange: nil) as? CGFloat,
+        file: file,
+        line: line
+    )
+    XCTAssertEqual(
+        baselineOffset,
+        RichTextFormatting.timestampBaselineOffset,
+        accuracy: 0.001,
+        file: file,
+        line: line
+    )
 }
 
 private func sanitizedHTML(_ html: String) throws -> NSAttributedString {

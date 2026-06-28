@@ -7,7 +7,9 @@ public enum RichTextPasteSanitizer {
     }
 
     public static func sanitizedPlainText(_ string: String) -> NSAttributedString {
-        NSAttributedString(string: string, attributes: defaultTextAttributes)
+        applyingTimestampLineAttributes(
+            to: NSAttributedString(string: string, attributes: defaultTextAttributes)
+        )
     }
 
     public static func sanitizedTrimmedPlainText(_ string: String) -> NSAttributedString? {
@@ -95,13 +97,14 @@ public enum RichTextPasteSanitizer {
                 to: result,
                 preservesAttachments: preservesAttachments
             )
-            return result
+            return applyingTimestampLineAttributes(to: result)
         }
 
-        return sanitizedAttributedStringWithNormalizedLists(
+        let result = sanitizedAttributedStringWithNormalizedLists(
             attributedString,
             preservesAttachments: preservesAttachments
         )
+        return applyingTimestampLineAttributes(to: result)
     }
 
     public static func sanitizedTrimmedAttributedString(
@@ -141,9 +144,10 @@ public enum RichTextPasteSanitizer {
             return NSAttributedString()
         }
 
-        return attributedString.attributedSubstring(
+        let trimmed = attributedString.attributedSubstring(
             from: NSRange(location: start, length: end - start)
         )
+        return applyingTimestampLineAttributes(to: trimmed)
     }
 
     private static func isOuterWhitespace(_ character: unichar) -> Bool {
@@ -203,6 +207,45 @@ public enum RichTextPasteSanitizer {
             }
 
             location = max(paragraphEnd, location + 1)
+        }
+
+        return result
+    }
+
+    private static func applyingTimestampLineAttributes(
+        to attributedString: NSAttributedString
+    ) -> NSAttributedString {
+        guard attributedString.length > 0 else {
+            return attributedString
+        }
+
+        let result = NSMutableAttributedString(attributedString: attributedString)
+        let string = result.string as NSString
+        var location = 0
+
+        while location < string.length {
+            var lineStart = 0
+            var lineEnd = 0
+            var contentsEnd = 0
+            string.getLineStart(
+                &lineStart,
+                end: &lineEnd,
+                contentsEnd: &contentsEnd,
+                for: NSRange(location: location, length: 0)
+            )
+
+            let contentRange = NSRange(
+                location: lineStart,
+                length: contentsEnd - lineStart
+            )
+            if RichTextDocument.isTimestampLine(string.substring(with: contentRange)) {
+                result.setAttributes(
+                    RichTextFormatting.timestampAttributes,
+                    range: NSRange(location: lineStart, length: lineEnd - lineStart)
+                )
+            }
+
+            location = max(lineEnd, location + 1)
         }
 
         return result
