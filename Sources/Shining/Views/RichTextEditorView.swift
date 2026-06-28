@@ -222,7 +222,10 @@ final class RichTextView: NSTextView {
     private static let imageDisplayScale: CGFloat = 0.5
     private static let minimumImageAvailableWidth: CGFloat = 120
     private static let imageHorizontalPadding: CGFloat = 8
+    private static let timestampDragHandleSize = NSSize(width: 26, height: 22)
     private static let timestampDeleteButtonSize = NSSize(width: 22, height: 22)
+    private static let timestampActionButtonGap: CGFloat = 2
+    private static let timestampDropIndicatorHeight: CGFloat = 2
     private static let deleteKeyCode: UInt16 = 51
     private static let forwardDeleteKeyCode: UInt16 = 117
     private static let commandShiftModifiers: NSEvent.ModifierFlags = [.command, .shift]
@@ -233,9 +236,21 @@ final class RichTextView: NSTextView {
         .shift
     ]
 
-    private let timestampDeleteOverlayView = TimestampDeleteOverlayView()
+    private let timestampDragOverlayView = TimestampActionOverlayView(
+        systemSymbolName: "arrow.up.and.down.text.horizontal",
+        accessibilityDescription: "Drag time block",
+        iconFrameSize: NSSize(width: 15, height: 11),
+        symbolPointSize: 10.5
+    )
+    private let timestampDeleteOverlayView = TimestampActionOverlayView(
+        systemSymbolName: "trash",
+        accessibilityDescription: "Delete time block"
+    )
+    private let timestampDropIndicatorView = TimestampDropIndicatorView()
     private var hoverTrackingArea: NSTrackingArea?
     private var hoveredTimestampBlock: HoveredTimestampBlock?
+    private var draggedTimestampBlock: DraggedTimestampBlock?
+    private var timestampDropTarget: TimestampDropTarget?
 
     static var defaultTypingAttributes: [NSAttributedString.Key: Any] {
         RichTextFormatting.bodyAttributes
@@ -386,11 +401,19 @@ final class RichTextView: NSTextView {
 
     override func mouseMoved(with event: NSEvent) {
         super.mouseMoved(with: event)
+        guard draggedTimestampBlock == nil else {
+            return
+        }
         updateTimestampDeleteButton(for: event)
     }
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        if isHoveringTimestampDragHandle(at: point) {
+            beginTimestampBlockDrag(with: event)
+            return
+        }
+
         guard isHoveringTimestampDeleteButton(at: point) else {
             super.mouseDown(with: event)
             return
@@ -400,8 +423,29 @@ final class RichTextView: NSTextView {
         deleteHoveredTimestampBlock()
     }
 
+    override func mouseDragged(with event: NSEvent) {
+        guard draggedTimestampBlock != nil else {
+            super.mouseDragged(with: event)
+            return
+        }
+
+        updateTimestampBlockDrag(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard draggedTimestampBlock != nil else {
+            super.mouseUp(with: event)
+            return
+        }
+
+        completeTimestampBlockDrag(with: event)
+    }
+
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
+        guard draggedTimestampBlock == nil else {
+            return
+        }
         invalidateTimestampBlockHover()
     }
 
@@ -409,7 +453,8 @@ final class RichTextView: NSTextView {
         super.resetCursorRects()
 
         if let hoveredTimestampBlock {
-            addCursorRect(hoveredTimestampBlock.buttonFrame, cursor: .arrow)
+            addCursorRect(hoveredTimestampBlock.dragHandleFrame, cursor: .openHand)
+            addCursorRect(hoveredTimestampBlock.deleteButtonFrame, cursor: .arrow)
         }
     }
 
@@ -923,23 +968,32 @@ final class RichTextView: NSTextView {
 
     func invalidateTimestampBlockHover() {
         hoveredTimestampBlock = nil
+        timestampDragOverlayView.setHovered(false)
+        timestampDragOverlayView.setActive(false)
         timestampDeleteOverlayView.setHovered(false)
+        timestampDeleteOverlayView.setActive(false)
+        setTimestampDragOverlayFrame(nil)
         setTimestampDeleteOverlayFrame(nil)
+        timestampDropTarget = nil
+        timestampDropIndicatorView.isHidden = true
     }
 
     private func configureTimestampDeleteOverlayView() {
+        timestampDragOverlayView.isHidden = true
         timestampDeleteOverlayView.isHidden = true
+        timestampDropIndicatorView.isHidden = true
+        addSubview(timestampDropIndicatorView)
+        addSubview(timestampDragOverlayView)
         addSubview(timestampDeleteOverlayView)
     }
 
     private func updateTimestampDeleteButton(for event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        if isHoveringTimestampDeleteButton(at: point) {
-            timestampDeleteOverlayView.setHovered(true)
-            NSCursor.arrow.set()
+        if updateTimestampActionHover(at: point) {
             return
         }
 
+        timestampDragOverlayView.setHovered(false)
         timestampDeleteOverlayView.setHovered(false)
 
         guard let textStorage,
@@ -949,10 +1003,15 @@ final class RichTextView: NSTextView {
         }
 
         let document = NSAttributedString(attributedString: textStorage)
+        let blockIndex = RichTextDocument.timestampBlockIndex(
+            containing: characterIndex,
+            in: document
+        )
         guard let blockRange = RichTextDocument.timestampBlockRange(
             containing: characterIndex,
             in: document
         ),
+              let blockIndex,
               let deletionRange = RichTextDocument.timestampBlockDeletionRange(
                   containing: characterIndex,
                   in: document
@@ -961,22 +1020,50 @@ final class RichTextView: NSTextView {
             return
         }
 
-        guard let buttonFrame = makeTimestampDeleteButtonFrame(for: blockRange) else {
+        guard let actionFrames = makeTimestampActionFrames(for: blockRange) else {
             invalidateTimestampBlockHover()
             return
         }
 
         hoveredTimestampBlock = HoveredTimestampBlock(
+            index: blockIndex,
             range: blockRange,
             deletionRange: deletionRange,
-            buttonFrame: buttonFrame
+            dragHandleFrame: actionFrames.dragHandleFrame,
+            deleteButtonFrame: actionFrames.deleteButtonFrame
         )
-        setTimestampDeleteOverlayFrame(buttonFrame)
-        timestampDeleteOverlayView.setHovered(buttonFrame.contains(point))
+        setTimestampDragOverlayFrame(actionFrames.dragHandleFrame)
+        setTimestampDeleteOverlayFrame(actionFrames.deleteButtonFrame)
+        _ = updateTimestampActionHover(at: point)
+    }
+
+    private func updateTimestampActionHover(at point: NSPoint) -> Bool {
+        guard let hoveredTimestampBlock else {
+            return false
+        }
+
+        let isHoveringDragHandle = hoveredTimestampBlock.dragHandleFrame.contains(point)
+        let isHoveringDeleteButton = hoveredTimestampBlock.deleteButtonFrame.contains(point)
+        guard isHoveringDragHandle || isHoveringDeleteButton else {
+            return false
+        }
+
+        timestampDragOverlayView.setHovered(isHoveringDragHandle)
+        timestampDeleteOverlayView.setHovered(isHoveringDeleteButton)
+        if isHoveringDragHandle {
+            NSCursor.openHand.set()
+        } else {
+            NSCursor.arrow.set()
+        }
+        return true
+    }
+
+    private func isHoveringTimestampDragHandle(at point: NSPoint) -> Bool {
+        hoveredTimestampBlock?.dragHandleFrame.contains(point) ?? false
     }
 
     private func isHoveringTimestampDeleteButton(at point: NSPoint) -> Bool {
-        hoveredTimestampBlock?.buttonFrame.contains(point) ?? false
+        hoveredTimestampBlock?.deleteButtonFrame.contains(point) ?? false
     }
 
     private func hoveredCharacterIndex(for event: NSEvent) -> Int? {
@@ -1016,19 +1103,24 @@ final class RichTextView: NSTextView {
 
     private func repositionTimestampDeleteButton() {
         guard let hoveredTimestampBlock,
-              let buttonFrame = makeTimestampDeleteButtonFrame(for: hoveredTimestampBlock.range) else {
+              let actionFrames = makeTimestampActionFrames(for: hoveredTimestampBlock.range) else {
             return
         }
 
         self.hoveredTimestampBlock = HoveredTimestampBlock(
+            index: hoveredTimestampBlock.index,
             range: hoveredTimestampBlock.range,
             deletionRange: hoveredTimestampBlock.deletionRange,
-            buttonFrame: buttonFrame
+            dragHandleFrame: actionFrames.dragHandleFrame,
+            deleteButtonFrame: actionFrames.deleteButtonFrame
         )
-        setTimestampDeleteOverlayFrame(buttonFrame)
+        setTimestampDragOverlayFrame(actionFrames.dragHandleFrame)
+        setTimestampDeleteOverlayFrame(actionFrames.deleteButtonFrame)
     }
 
-    private func makeTimestampDeleteButtonFrame(for blockRange: NSRange) -> NSRect? {
+    private func makeTimestampActionFrames(
+        for blockRange: NSRange
+    ) -> (dragHandleFrame: NSRect, deleteButtonFrame: NSRect)? {
         guard let textStorage,
               blockRange.location < textStorage.length,
               let layoutManager else {
@@ -1050,19 +1142,28 @@ final class RichTextView: NSTextView {
             forGlyphAt: glyphRange.location,
             effectiveRange: nil
         )
-        let size = Self.timestampDeleteButtonSize
+        let dragSize = Self.timestampDragHandleSize
+        let deleteSize = Self.timestampDeleteButtonSize
+        let groupWidth = dragSize.width + Self.timestampActionButtonGap + deleteSize.width
         let origin = textContainerOrigin
         let proposedX = origin.x + lineRect.maxX + 8
-        let maximumX = max(origin.x, bounds.width - size.width - 10)
-        let x = min(max(proposedX, origin.x), maximumX)
-        let y = origin.y + lineRect.minY + (lineRect.height - size.height) / 2
+        let maximumX = max(origin.x, bounds.width - groupWidth - 10)
+        let dragX = min(max(proposedX, origin.x), maximumX)
+        let y = origin.y + lineRect.minY + (lineRect.height - dragSize.height) / 2
 
-        return NSRect(
-            x: x.rounded(.down),
+        let dragHandleFrame = NSRect(
+            x: dragX.rounded(.down),
             y: y.rounded(.down),
-            width: size.width,
-            height: size.height
+            width: dragSize.width,
+            height: dragSize.height
         )
+        let deleteButtonFrame = NSRect(
+            x: (dragHandleFrame.maxX + Self.timestampActionButtonGap).rounded(.down),
+            y: y.rounded(.down),
+            width: deleteSize.width,
+            height: deleteSize.height
+        )
+        return (dragHandleFrame, deleteButtonFrame)
     }
 
     private func deleteHoveredTimestampBlock() {
@@ -1073,12 +1174,301 @@ final class RichTextView: NSTextView {
         _ = deleteCharacters(in: deletionRange)
     }
 
+    @discardableResult
+    func moveTimestampBlock(from sourceIndex: Int, to destinationIndex: Int) -> Bool {
+        guard let textStorage else {
+            return false
+        }
+
+        let document = NSAttributedString(attributedString: textStorage)
+        guard let result = RichTextDocument.moveTimestampBlock(
+            from: sourceIndex,
+            to: destinationIndex,
+            in: document
+        ) else {
+            return false
+        }
+
+        replaceDocumentForUndo(
+            with: result.document,
+            selectedRange: NSRange(location: result.movedBlockRange.location, length: 0),
+            actionName: "Reorder Time Block"
+        )
+        return true
+    }
+
+    private func beginTimestampBlockDrag(with event: NSEvent) {
+        guard let hoveredTimestampBlock else {
+            return
+        }
+
+        draggedTimestampBlock = DraggedTimestampBlock(
+            sourceIndex: hoveredTimestampBlock.index,
+            initialPoint: convert(event.locationInWindow, from: nil),
+            hasMoved: false
+        )
+        timestampDragOverlayView.setHovered(false)
+        timestampDragOverlayView.setActive(true)
+        timestampDeleteOverlayView.setHovered(false)
+        NSCursor.closedHand.set()
+    }
+
+    private func updateTimestampBlockDrag(with event: NSEvent) {
+        guard var draggedTimestampBlock else {
+            return
+        }
+
+        let point = convert(event.locationInWindow, from: nil)
+        if !draggedTimestampBlock.hasMoved,
+           distance(from: draggedTimestampBlock.initialPoint, to: point) >= 3 {
+            draggedTimestampBlock.hasMoved = true
+        }
+
+        self.draggedTimestampBlock = draggedTimestampBlock
+        guard draggedTimestampBlock.hasMoved else {
+            return
+        }
+
+        _ = autoscroll(with: event)
+        updateTimestampDropTarget(
+            at: point,
+            sourceIndex: draggedTimestampBlock.sourceIndex
+        )
+        NSCursor.closedHand.set()
+    }
+
+    private func completeTimestampBlockDrag(with event: NSEvent) {
+        let draggedTimestampBlock = self.draggedTimestampBlock
+        let dropTarget = timestampDropTarget
+
+        clearTimestampBlockDrag()
+
+        guard let draggedTimestampBlock,
+              draggedTimestampBlock.hasMoved,
+              let dropTarget else {
+            updateTimestampDeleteButton(for: event)
+            return
+        }
+
+        if !moveTimestampBlock(
+            from: draggedTimestampBlock.sourceIndex,
+            to: dropTarget.destinationIndex
+        ) {
+            updateTimestampDeleteButton(for: event)
+        }
+    }
+
+    private func clearTimestampBlockDrag() {
+        draggedTimestampBlock = nil
+        timestampDropTarget = nil
+        timestampDropIndicatorView.isHidden = true
+        timestampDragOverlayView.setActive(false)
+        NSCursor.arrow.set()
+    }
+
+    private func updateTimestampDropTarget(
+        at point: NSPoint,
+        sourceIndex: Int
+    ) {
+        guard let destinationIndex = timestampBlockDestinationIndex(at: point),
+              destinationIndex != sourceIndex,
+              destinationIndex != sourceIndex + 1,
+              let indicatorFrame = timestampDropIndicatorFrame(for: destinationIndex) else {
+            timestampDropTarget = nil
+            timestampDropIndicatorView.isHidden = true
+            return
+        }
+
+        timestampDropTarget = TimestampDropTarget(
+            destinationIndex: destinationIndex
+        )
+        timestampDropIndicatorView.frame = indicatorFrame
+        timestampDropIndicatorView.isHidden = false
+    }
+
+    private func timestampBlockDestinationIndex(at point: NSPoint) -> Int? {
+        let lineFrames = timestampBlockLineFrames()
+        guard !lineFrames.isEmpty else {
+            return nil
+        }
+
+        for index in lineFrames.indices where point.y < lineFrames[index].midY {
+            return index
+        }
+        return lineFrames.count
+    }
+
+    private func timestampDropIndicatorFrame(for destinationIndex: Int) -> NSRect? {
+        let lineFrames = timestampBlockLineFrames()
+        guard destinationIndex >= 0,
+              destinationIndex <= lineFrames.count,
+              !lineFrames.isEmpty else {
+            return nil
+        }
+
+        let y: CGFloat
+        if destinationIndex < lineFrames.count {
+            y = max(0, lineFrames[destinationIndex].minY - 5)
+        } else if let lastBlockFrame = timestampBlockFrame(at: lineFrames.index(before: lineFrames.endIndex)) {
+            y = lastBlockFrame.maxY + 8
+        } else {
+            y = lineFrames[lineFrames.index(before: lineFrames.endIndex)].maxY + 8
+        }
+
+        let origin = textContainerOrigin
+        return NSRect(
+            x: origin.x,
+            y: y.rounded(.down),
+            width: max(0, bounds.width - origin.x - 12),
+            height: Self.timestampDropIndicatorHeight
+        )
+    }
+
+    private func timestampBlockLineFrames() -> [NSRect] {
+        guard let textStorage else {
+            return []
+        }
+
+        return RichTextDocument.timestampBlockRanges(
+            in: NSAttributedString(attributedString: textStorage)
+        ).compactMap(timestampLineFrame)
+    }
+
+    private func timestampBlockFrame(at index: Int) -> NSRect? {
+        guard let textStorage else {
+            return nil
+        }
+
+        let ranges = RichTextDocument.timestampBlockRanges(
+            in: NSAttributedString(attributedString: textStorage)
+        )
+        guard ranges.indices.contains(index),
+              let layoutManager,
+              let textContainer else {
+            return nil
+        }
+
+        let range = ranges[index]
+        layoutManager.ensureLayout(forCharacterRange: range)
+        let glyphRange = layoutManager.glyphRange(
+            forCharacterRange: range,
+            actualCharacterRange: nil
+        )
+        guard glyphRange.length > 0 else {
+            return nil
+        }
+
+        return layoutManager
+            .boundingRect(forGlyphRange: glyphRange, in: textContainer)
+            .offsetBy(dx: textContainerOrigin.x, dy: textContainerOrigin.y)
+    }
+
+    private func timestampLineFrame(for blockRange: NSRange) -> NSRect? {
+        guard let textStorage,
+              blockRange.location < textStorage.length,
+              let layoutManager else {
+            return nil
+        }
+
+        let titleRange = NSRange(location: blockRange.location, length: 1)
+        layoutManager.ensureLayout(forCharacterRange: titleRange)
+        let glyphRange = layoutManager.glyphRange(
+            forCharacterRange: titleRange,
+            actualCharacterRange: nil
+        )
+        guard glyphRange.length > 0,
+              glyphRange.location < layoutManager.numberOfGlyphs else {
+            return nil
+        }
+
+        return layoutManager
+            .lineFragmentUsedRect(forGlyphAt: glyphRange.location, effectiveRange: nil)
+            .offsetBy(dx: textContainerOrigin.x, dy: textContainerOrigin.y)
+    }
+
+    private func replaceDocumentForUndo(
+        with document: NSAttributedString,
+        selectedRange: NSRange,
+        actionName: String
+    ) {
+        guard let textStorage else {
+            return
+        }
+
+        let previousDocument = NSAttributedString(attributedString: textStorage)
+        let previousSelectedRange = self.selectedRange()
+        undoManager?.registerUndo(withTarget: self) { textView in
+            textView.restoreDocumentForUndo(
+                previousDocument,
+                selectedRange: previousSelectedRange
+            )
+        }
+        undoManager?.setActionName(actionName)
+        applyDocumentReplacement(document, selectedRange: selectedRange)
+    }
+
+    private func restoreDocumentForUndo(
+        _ document: NSAttributedString,
+        selectedRange: NSRange
+    ) {
+        guard let textStorage else {
+            return
+        }
+
+        let redoDocument = NSAttributedString(attributedString: textStorage)
+        let redoSelectedRange = self.selectedRange()
+        undoManager?.registerUndo(withTarget: self) { textView in
+            textView.restoreDocumentForUndo(
+                redoDocument,
+                selectedRange: redoSelectedRange
+            )
+        }
+        applyDocumentReplacement(document, selectedRange: selectedRange)
+    }
+
+    private func applyDocumentReplacement(
+        _ document: NSAttributedString,
+        selectedRange: NSRange
+    ) {
+        guard let textStorage else {
+            return
+        }
+
+        textStorage.setAttributedString(document)
+        constrainImageAttachmentsToTextWidth()
+        let clampedRange = clampedRange(selectedRange, documentLength: textStorage.length)
+        setSelectedRange(clampedRange)
+        scrollRangeToVisible(NSRange(location: clampedRange.location, length: 0))
+        didChangeText()
+        invalidateTimestampBlockHover()
+    }
+
+    private func clampedRange(_ range: NSRange, documentLength: Int) -> NSRange {
+        let location = min(max(0, range.location), documentLength)
+        let length = min(max(0, range.length), documentLength - location)
+        return NSRange(location: location, length: length)
+    }
+
+    private func distance(from start: NSPoint, to end: NSPoint) -> CGFloat {
+        hypot(end.x - start.x, end.y - start.y)
+    }
+
     private func invalidateTimestampDeleteButtonCursorRect() {
         guard let window else {
             return
         }
 
         window.invalidateCursorRects(for: self)
+    }
+
+    private func setTimestampDragOverlayFrame(_ frame: NSRect?) {
+        if let frame {
+            timestampDragOverlayView.frame = frame
+            timestampDragOverlayView.isHidden = false
+        } else {
+            timestampDragOverlayView.isHidden = true
+        }
+        invalidateTimestampDeleteButtonCursorRect()
     }
 
     private func setTimestampDeleteOverlayFrame(_ frame: NSRect?) {
@@ -1272,18 +1662,124 @@ final class RichTextView: NSTextView {
     }
 
     private struct HoveredTimestampBlock {
+        let index: Int
         let range: NSRange
         let deletionRange: NSRange
-        let buttonFrame: NSRect
+        let dragHandleFrame: NSRect
+        let deleteButtonFrame: NSRect
+    }
+
+    private struct DraggedTimestampBlock {
+        let sourceIndex: Int
+        let initialPoint: NSPoint
+        var hasMoved: Bool
+    }
+
+    private struct TimestampDropTarget {
+        let destinationIndex: Int
     }
 }
 
-private final class TimestampDeleteOverlayView: NSView {
-    private static let iconSize: CGFloat = 11
-
+private final class TimestampActionOverlayView: NSView {
     private let imageView = NSImageView()
+    private let systemSymbolName: String
+    private let accessibilityDescription: String
+    private let iconFrameSize: NSSize
+    private let symbolPointSize: CGFloat
     private var isHovered = false
+    private var isActive = false
 
+    override var isFlipped: Bool {
+        true
+    }
+
+    init(
+        systemSymbolName: String,
+        accessibilityDescription: String,
+        iconFrameSize: NSSize = NSSize(width: 11, height: 11),
+        symbolPointSize: CGFloat = 11
+    ) {
+        self.systemSymbolName = systemSymbolName
+        self.accessibilityDescription = accessibilityDescription
+        self.iconFrameSize = iconFrameSize
+        self.symbolPointSize = symbolPointSize
+        super.init(frame: .zero)
+        configure()
+    }
+
+    required init?(coder: NSCoder) {
+        self.systemSymbolName = "circle"
+        self.accessibilityDescription = "Time block action"
+        self.iconFrameSize = NSSize(width: 11, height: 11)
+        self.symbolPointSize = 11
+        super.init(coder: coder)
+        configure()
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+
+    override func layout() {
+        super.layout()
+        imageView.frame = NSRect(
+            x: (bounds.width - iconFrameSize.width) / 2,
+            y: (bounds.height - iconFrameSize.height) / 2,
+            width: iconFrameSize.width,
+            height: iconFrameSize.height
+        )
+    }
+
+    func setHovered(_ isHovered: Bool) {
+        guard self.isHovered != isHovered else {
+            return
+        }
+
+        self.isHovered = isHovered
+        updateBackground()
+    }
+
+    func setActive(_ isActive: Bool) {
+        guard self.isActive != isActive else {
+            return
+        }
+
+        self.isActive = isActive
+        updateBackground()
+    }
+
+    private func configure() {
+        wantsLayer = true
+        layer?.cornerRadius = 6
+        layer?.masksToBounds = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+
+        imageView.imageScaling = .scaleProportionallyDown
+        imageView.contentTintColor = .secondaryLabelColor
+        if let symbolImage = NSImage(
+            systemSymbolName: systemSymbolName,
+            accessibilityDescription: accessibilityDescription
+        ) {
+            let configuration = NSImage.SymbolConfiguration(pointSize: symbolPointSize, weight: .regular)
+            imageView.image = symbolImage.withSymbolConfiguration(configuration) ?? symbolImage
+        }
+        addSubview(imageView)
+    }
+
+    private func updateBackground() {
+        let alpha: CGFloat
+        if isActive {
+            alpha = 0.11
+        } else if isHovered {
+            alpha = 0.05
+        } else {
+            alpha = 0
+        }
+        layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(alpha).cgColor
+    }
+}
+
+private final class TimestampDropIndicatorView: NSView {
     override var isFlipped: Bool {
         true
     }
@@ -1302,43 +1798,10 @@ private final class TimestampDeleteOverlayView: NSView {
         nil
     }
 
-    override func layout() {
-        super.layout()
-        imageView.frame = NSRect(
-            x: (bounds.width - Self.iconSize) / 2,
-            y: (bounds.height - Self.iconSize) / 2,
-            width: Self.iconSize,
-            height: Self.iconSize
-        )
-    }
-
-    func setHovered(_ isHovered: Bool) {
-        guard self.isHovered != isHovered else {
-            return
-        }
-
-        self.isHovered = isHovered
-        layer?.backgroundColor = isHovered
-            ? NSColor.labelColor.withAlphaComponent(0.05).cgColor
-            : NSColor.clear.cgColor
-    }
-
     private func configure() {
         wantsLayer = true
-        layer?.cornerRadius = 6
-        layer?.masksToBounds = true
-        layer?.backgroundColor = NSColor.clear.cgColor
-
-        imageView.imageScaling = .scaleProportionallyDown
-        imageView.contentTintColor = .secondaryLabelColor
-        if let trashImage = NSImage(
-            systemSymbolName: "trash",
-            accessibilityDescription: "Delete time block"
-        ) {
-            let configuration = NSImage.SymbolConfiguration(pointSize: Self.iconSize, weight: .regular)
-            imageView.image = trashImage.withSymbolConfiguration(configuration) ?? trashImage
-        }
-        addSubview(imageView)
+        layer?.cornerRadius = 1
+        layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.8).cgColor
     }
 }
 

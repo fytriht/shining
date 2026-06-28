@@ -10,6 +10,7 @@ Open Shining or press `Command + Option + Space` to bring up the editor window a
 - Opening the app starts a new timestamped entry
 - Main editor window for writing, reviewing, and editing saved ideas
 - New timestamps are inserted at the top, newest first
+- Reorder timestamp blocks by dragging the handle next to a timestamp
 - Delete the current timestamp block with `Command + Shift + Delete`
 - Rich text editing with images
 - Local persistence in Application Support

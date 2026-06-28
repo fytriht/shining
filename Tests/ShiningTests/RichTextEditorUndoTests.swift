@@ -93,6 +93,26 @@ final class RichTextEditorUndoTests: XCTestCase {
     }
 
     @MainActor
+    func testUndoRestoresTimestampBlockReorderThroughEditor() throws {
+        let documentString = makeThreeBlockDocumentString()
+        let fixture = makeEditorFixture(documentString: documentString)
+
+        XCTAssertTrue(fixture.textView.moveTimestampBlock(from: 1, to: 0))
+
+        XCTAssertEqual(fixture.textView.string, makeDocumentStringAfterMovingMiddleBlockToTop())
+        XCTAssertTrue(fixture.textView.undoManager?.canUndo ?? false)
+
+        fixture.textView.undoManager?.undo()
+
+        XCTAssertEqual(fixture.textView.string, documentString)
+        XCTAssertTrue(fixture.textView.undoManager?.canRedo ?? false)
+
+        fixture.textView.undoManager?.redo()
+
+        XCTAssertEqual(fixture.textView.string, makeDocumentStringAfterMovingMiddleBlockToTop())
+    }
+
+    @MainActor
     func testTypingAfterClearingWholeDocumentUsesBodyAttributes() throws {
         let document = makeTimestampDocument()
         let fixture = makeEditorFixture(document: document)
@@ -178,6 +198,19 @@ final class RichTextEditorUndoTests: XCTestCase {
 
     private func makeDocumentStringAfterDeletingMiddleBlock() -> String {
         [
+            "2026-06-02 08:42",
+            "latest",
+            "",
+            "2026-06-02 08:40",
+            "older"
+        ].joined(separator: "\n")
+    }
+
+    private func makeDocumentStringAfterMovingMiddleBlockToTop() -> String {
+        [
+            "2026-06-02 08:41",
+            "middle",
+            "",
             "2026-06-02 08:42",
             "latest",
             "",

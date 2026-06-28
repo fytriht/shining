@@ -2,6 +2,11 @@ import AppKit
 import Foundation
 
 public enum RichTextDocument {
+    public struct TimestampBlockMoveResult {
+        public let document: NSAttributedString
+        public let movedBlockRange: NSRange
+    }
+
     public static func empty() -> NSAttributedString {
         NSAttributedString(string: "")
     }
@@ -12,6 +17,105 @@ public enum RichTextDocument {
 
     public static func timestampBlockCount(in document: NSAttributedString) -> Int {
         findTimestampLines(in: document).count
+    }
+
+    public static func timestampBlockIndex(
+        containing location: Int,
+        in document: NSAttributedString
+    ) -> Int? {
+        guard location >= 0, location <= document.length else {
+            return nil
+        }
+
+        let timestampLines = findTimestampLines(in: document)
+        for index in timestampLines.indices {
+            let timestampLine = timestampLines[index]
+            let nextIndex = timestampLines.index(after: index)
+            let nextLine = nextIndex < timestampLines.endIndex ? timestampLines[nextIndex] : nil
+            let endLocation = nextLine?.lineRange.location ?? document.length
+            let containsLocation = location >= timestampLine.lineRange.location &&
+                (location < endLocation || (location == document.length && endLocation == document.length))
+
+            if containsLocation {
+                return index
+            }
+        }
+
+        return nil
+    }
+
+    public static func timestampBlockRanges(in document: NSAttributedString) -> [NSRange] {
+        let timestampLines = findTimestampLines(in: document)
+        return timestampLines.indices.map { index in
+            let timestampLine = timestampLines[index]
+            let nextIndex = timestampLines.index(after: index)
+            let endLocation = nextIndex < timestampLines.endIndex
+                ? timestampLines[nextIndex].lineRange.location
+                : document.length
+            return NSRange(
+                location: timestampLine.lineRange.location,
+                length: endLocation - timestampLine.lineRange.location
+            )
+        }
+    }
+
+    public static func moveTimestampBlock(
+        from sourceIndex: Int,
+        to destinationIndex: Int,
+        in document: NSAttributedString
+    ) -> TimestampBlockMoveResult? {
+        let sections = timestampBlockSections(in: document)
+        guard sections.blocks.indices.contains(sourceIndex),
+              destinationIndex >= 0,
+              destinationIndex <= sections.blocks.count else {
+            return nil
+        }
+
+        guard destinationIndex != sourceIndex,
+              destinationIndex != sourceIndex + 1 else {
+            return nil
+        }
+
+        var blocks = sections.blocks
+        let movedBlock = blocks.remove(at: sourceIndex)
+        let adjustedDestinationIndex = destinationIndex > sourceIndex
+            ? destinationIndex - 1
+            : destinationIndex
+        blocks.insert(movedBlock, at: adjustedDestinationIndex)
+
+        let result = NSMutableAttributedString()
+        result.append(sections.prefix)
+
+        var movedBlockRange: NSRange?
+        for index in blocks.indices {
+            if index > 0 {
+                result.append(bodyText("\n\n"))
+            }
+
+            let block = blocks[index]
+            let blockLocation = result.length
+            result.append(block.content)
+
+            var blockLength = block.content.length
+            if index == blocks.index(before: blocks.endIndex),
+               block.needsTrailingLineEndingWhenLast {
+                result.append(timestampText("\n"))
+                blockLength += 1
+            }
+
+            if block.originalIndex == sourceIndex {
+                movedBlockRange = NSRange(location: blockLocation, length: blockLength)
+            }
+        }
+
+        guard let movedBlockRange else {
+            return nil
+        }
+
+        return TimestampBlockMoveResult(
+            document: result,
+            movedBlockRange: movedBlockRange
+        )
     }
 
     public static func isUserEditableRange(
@@ -235,6 +339,13 @@ public enum RichTextDocument {
         )
     }
 
+    private static func timestampText(_ string: String) -> NSAttributedString {
+        NSAttributedString(
+            string: string,
+            attributes: RichTextFormatting.timestampAttributes
+        )
+    }
+
     public static func load(from fileURL: URL) -> NSAttributedString {
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
             return empty()
@@ -417,6 +528,68 @@ public enum RichTextDocument {
         return nil
     }
 
+    private static func timestampBlockSections(
+        in document: NSAttributedString
+    ) -> TimestampBlockSections {
+        let timestampLines = findTimestampLines(in: document)
+        guard let firstTimestampLine = timestampLines.first else {
+            return TimestampBlockSections(
+                prefix: NSAttributedString(attributedString: document),
+                blocks: []
+            )
+        }
+
+        let prefixRange = NSRange(
+            location: 0,
+            length: firstTimestampLine.lineRange.location
+        )
+        let prefix = document.attributedSubstring(from: prefixRange)
+        let string = document.string as NSString
+
+        let blocks = timestampLines.indices.map { index in
+            let timestampLine = timestampLines[index]
+            let nextIndex = timestampLines.index(after: index)
+            let blockEndLocation = nextIndex < timestampLines.endIndex
+                ? timestampLines[nextIndex].lineRange.location
+                : document.length
+            let contentEndLocation = timestampBlockContentEndLocation(
+                for: timestampLine,
+                blockEndLocation: blockEndLocation,
+                in: string
+            )
+            let contentRange = NSRange(
+                location: timestampLine.lineRange.location,
+                length: contentEndLocation - timestampLine.lineRange.location
+            )
+            return TimestampBlockSection(
+                originalIndex: index,
+                content: document.attributedSubstring(from: contentRange),
+                needsTrailingLineEndingWhenLast: contentEndLocation == timestampLine.contentRange.endLocation &&
+                    timestampLine.lineRange.endLocation > timestampLine.contentRange.endLocation
+            )
+        }
+
+        return TimestampBlockSections(prefix: prefix, blocks: blocks)
+    }
+
+    private static func timestampBlockContentEndLocation(
+        for timestampLine: TimestampLine,
+        blockEndLocation: Int,
+        in string: NSString
+    ) -> Int {
+        var contentEndLocation = blockEndLocation
+        while contentEndLocation > timestampLine.contentRange.endLocation,
+              isWhitespace(string.character(at: contentEndLocation - 1)) {
+            contentEndLocation -= 1
+        }
+
+        if contentEndLocation < timestampLine.contentRange.endLocation {
+            return timestampLine.contentRange.endLocation
+        }
+
+        return contentEndLocation
+    }
+
     static func isTimestampLine(_ line: String) -> Bool {
         guard line.count == 16 else {
             return false
@@ -446,6 +619,17 @@ public enum RichTextDocument {
         let timestampLine: TimestampLine
         let nextLine: TimestampLine?
         let range: NSRange
+    }
+
+    private struct TimestampBlockSections {
+        let prefix: NSAttributedString
+        let blocks: [TimestampBlockSection]
+    }
+
+    private struct TimestampBlockSection {
+        let originalIndex: Int
+        let content: NSAttributedString
+        let needsTrailingLineEndingWhenLast: Bool
     }
 
     private struct TimestampLine {

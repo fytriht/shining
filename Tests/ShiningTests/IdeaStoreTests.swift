@@ -767,6 +767,106 @@ final class IdeaStoreTests: XCTestCase {
         XCTAssertEqual(string.substring(with: range), "2026-06-02 08:41\nnewer\n\n")
     }
 
+    func testMovingTimestampBlockToTopReordersWholeBlock() throws {
+        let documentString = [
+            "2026-06-02 08:42",
+            "latest",
+            "",
+            "2026-06-02 08:41",
+            "middle",
+            "",
+            "2026-06-02 08:40",
+            "older"
+        ].joined(separator: "\n")
+        let document = NSAttributedString(string: documentString)
+
+        let result = try XCTUnwrap(
+            RichTextDocument.moveTimestampBlock(from: 1, to: 0, in: document)
+        )
+
+        XCTAssertEqual(
+            result.document.string,
+            [
+                "2026-06-02 08:41",
+                "middle",
+                "",
+                "2026-06-02 08:42",
+                "latest",
+                "",
+                "2026-06-02 08:40",
+                "older"
+            ].joined(separator: "\n")
+        )
+        XCTAssertEqual(result.movedBlockRange.location, 0)
+    }
+
+    func testMovingTimestampBlockToEndReordersWholeBlock() throws {
+        let documentString = [
+            "2026-06-02 08:42",
+            "latest",
+            "",
+            "2026-06-02 08:41",
+            "middle",
+            "",
+            "2026-06-02 08:40",
+            "older"
+        ].joined(separator: "\n")
+        let document = NSAttributedString(string: documentString)
+
+        let result = try XCTUnwrap(
+            RichTextDocument.moveTimestampBlock(from: 0, to: 3, in: document)
+        )
+
+        XCTAssertEqual(
+            result.document.string,
+            [
+                "2026-06-02 08:41",
+                "middle",
+                "",
+                "2026-06-02 08:40",
+                "older",
+                "",
+                "2026-06-02 08:42",
+                "latest"
+            ].joined(separator: "\n")
+        )
+        XCTAssertEqual(
+            result.movedBlockRange.location,
+            (result.document.string as NSString).range(of: "2026-06-02 08:42").location
+        )
+    }
+
+    func testMovingTimestampBlockPreservesImageAttachment() throws {
+        let document = NSMutableAttributedString(string: [
+            "2026-06-02 08:42",
+            "latest",
+            "",
+            "2026-06-02 08:41",
+            "image:"
+        ].joined(separator: "\n"))
+        document.append(NSAttributedString(string: "\n"))
+        document.append(makeImageAttributedString())
+        document.append(NSAttributedString(string: "\n\n2026-06-02 08:40\nolder"))
+
+        let result = try XCTUnwrap(
+            RichTextDocument.moveTimestampBlock(from: 1, to: 3, in: document)
+        )
+        let movedBlock = result.document.attributedSubstring(from: result.movedBlockRange)
+
+        XCTAssertTrue(result.document.string.hasPrefix("2026-06-02 08:42\nlatest\n\n2026-06-02 08:40\nolder"))
+        XCTAssertTrue(movedBlock.string.hasPrefix("2026-06-02 08:41\nimage:\n"))
+        XCTAssertTrue(containsAttachment(movedBlock))
+    }
+
+    func testMovingTimestampBlockReturnsNilForCurrentBoundary() throws {
+        let document = NSAttributedString(
+            string: "2026-06-02 08:41\nnewer\n\n2026-06-02 08:40\nolder"
+        )
+
+        XCTAssertNil(RichTextDocument.moveTimestampBlock(from: 0, to: 0, in: document))
+        XCTAssertNil(RichTextDocument.moveTimestampBlock(from: 0, to: 1, in: document))
+    }
+
     func testTimestampBlockDeletionRangeForMiddleBlockLeavesNeighborsAdjacent() throws {
         let documentString = [
             "2026-06-02 08:42",
