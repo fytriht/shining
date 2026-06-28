@@ -308,6 +308,20 @@ final class RichTextView: NSTextView {
         typingAttributes = Self.defaultTypingAttributes
     }
 
+    override func copy(_ sender: Any?) {
+        guard let imageItems = selectedImagePasteboardItems() else {
+            super.copy(sender)
+            return
+        }
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        guard pasteboard.writeObjects(imageItems) else {
+            super.copy(sender)
+            return
+        }
+    }
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard isDeleteCurrentTimestampBlockShortcut(event) else {
             return super.performKeyEquivalent(with: event)
@@ -561,7 +575,7 @@ final class RichTextView: NSTextView {
     }
 
     private func imageAttachment(fromImageDataIn item: NSPasteboardItem) -> NSTextAttachment? {
-        for pasteboardType in imagePasteboardTypes {
+        for pasteboardType in Self.imagePasteboardTypes {
             guard let data = item.data(forType: pasteboardType),
                   let image = NSImage(data: data) else {
                 continue
@@ -609,6 +623,173 @@ final class RichTextView: NSTextView {
             }
         }
         return hasAttachment
+    }
+
+    private func selectedImagePasteboardItems() -> [NSPasteboardItem]? {
+        let range = selectedRange()
+        guard range.length > 0,
+              let textStorage else {
+            return nil
+        }
+
+        var imageItems: [NSPasteboardItem] = []
+        var isImageOnlySelection = true
+        let string = textStorage.string as NSString
+
+        textStorage.enumerateAttributes(in: range) { attributes, effectiveRange, stop in
+            if let attachment = attributes[.attachment] as? NSTextAttachment {
+                guard let item = Self.imagePasteboardItem(for: attachment) else {
+                    isImageOnlySelection = false
+                    stop.pointee = true
+                    return
+                }
+
+                imageItems.append(item)
+                return
+            }
+
+            let text = string.substring(with: effectiveRange)
+            if text.rangeOfCharacter(from: CharacterSet.whitespacesAndNewlines.inverted) != nil {
+                isImageOnlySelection = false
+                stop.pointee = true
+            }
+        }
+
+        guard isImageOnlySelection,
+              !imageItems.isEmpty else {
+            return nil
+        }
+        return imageItems
+    }
+
+    private static func imagePasteboardItem(for attachment: NSTextAttachment) -> NSPasteboardItem? {
+        let representations = imagePasteboardRepresentations(for: attachment)
+        guard !representations.isEmpty else {
+            return nil
+        }
+
+        let item = NSPasteboardItem()
+        for representation in representations {
+            item.setData(representation.data, forType: representation.type)
+        }
+        return item
+    }
+
+    private static func imagePasteboardRepresentations(
+        for attachment: NSTextAttachment
+    ) -> [ImagePasteboardRepresentation] {
+        var representations: [ImagePasteboardRepresentation] = []
+
+        if let type = imagePasteboardType(for: attachment),
+           let data = rawImageData(for: attachment),
+           NSImage(data: data) != nil {
+            appendImagePasteboardRepresentation(
+                type: type,
+                data: data,
+                to: &representations
+            )
+        }
+
+        guard let image = image(for: attachment) else {
+            return representations
+        }
+
+        if let data = pngData(for: image) {
+            appendImagePasteboardRepresentation(
+                type: .png,
+                data: data,
+                to: &representations
+            )
+        }
+
+        if let data = image.tiffRepresentation {
+            appendImagePasteboardRepresentation(
+                type: .tiff,
+                data: data,
+                to: &representations
+            )
+        }
+
+        return representations
+    }
+
+    private static func appendImagePasteboardRepresentation(
+        type: NSPasteboard.PasteboardType,
+        data: Data,
+        to representations: inout [ImagePasteboardRepresentation]
+    ) {
+        guard !data.isEmpty,
+              !representations.contains(where: { $0.type == type }) else {
+            return
+        }
+
+        representations.append(ImagePasteboardRepresentation(type: type, data: data))
+    }
+
+    private static func rawImageData(for attachment: NSTextAttachment) -> Data? {
+        if let contents = attachment.contents {
+            return contents
+        }
+
+        return attachment.fileWrapper?.regularFileContents
+    }
+
+    private static func imagePasteboardType(
+        for attachment: NSTextAttachment
+    ) -> NSPasteboard.PasteboardType? {
+        if let fileType = attachment.fileType,
+           let contentType = UTType(fileType),
+           let pasteboardType = imagePasteboardType(for: contentType) {
+            return pasteboardType
+        }
+
+        let fileNames = [
+            attachment.fileWrapper?.preferredFilename,
+            attachment.fileWrapper?.filename
+        ]
+
+        for fileName in fileNames.compactMap({ $0 }) {
+            let pathExtension = URL(fileURLWithPath: fileName).pathExtension
+            guard !pathExtension.isEmpty,
+                  let contentType = UTType(filenameExtension: pathExtension),
+                  let pasteboardType = imagePasteboardType(for: contentType) else {
+                continue
+            }
+            return pasteboardType
+        }
+
+        return nil
+    }
+
+    private static func imagePasteboardType(
+        for contentType: UTType
+    ) -> NSPasteboard.PasteboardType? {
+        guard contentType.conforms(to: .image) else {
+            return nil
+        }
+
+        if contentType.conforms(to: .png) {
+            return .png
+        }
+
+        if contentType.conforms(to: .tiff) {
+            return .tiff
+        }
+
+        if contentType.conforms(to: .jpeg) {
+            return NSPasteboard.PasteboardType("public.jpeg")
+        }
+
+        return NSPasteboard.PasteboardType(contentType.identifier)
+    }
+
+    private static func pngData(for image: NSImage) -> Data? {
+        guard let tiffData = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData) else {
+            return nil
+        }
+
+        return bitmap.representation(using: .png, properties: [:])
     }
 
     private func insertImages(_ urls: [URL], replacing range: NSRange) {
@@ -1072,19 +1253,22 @@ final class RichTextView: NSTextView {
         return size
     }
 
-    private var imagePasteboardTypes: [NSPasteboard.PasteboardType] {
-        [
-            .png,
-            .tiff,
-            NSPasteboard.PasteboardType("public.jpeg"),
-            NSPasteboard.PasteboardType("public.heic"),
-            NSPasteboard.PasteboardType("public.heif")
-        ]
-    }
+    private static let imagePasteboardTypes: [NSPasteboard.PasteboardType] = [
+        .png,
+        .tiff,
+        NSPasteboard.PasteboardType("public.jpeg"),
+        NSPasteboard.PasteboardType("public.heic"),
+        NSPasteboard.PasteboardType("public.heif")
+    ]
 
     private struct PasteboardImageAttachment {
         let attachment: NSTextAttachment
         let sourceURL: URL?
+    }
+
+    private struct ImagePasteboardRepresentation {
+        let type: NSPasteboard.PasteboardType
+        let data: Data
     }
 
     private struct HoveredTimestampBlock {

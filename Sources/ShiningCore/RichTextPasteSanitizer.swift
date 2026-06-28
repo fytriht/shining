@@ -285,6 +285,8 @@ public enum RichTextPasteSanitizer {
     private static func copyAttachment(_ attachment: NSTextAttachment) -> NSTextAttachment {
         let copiedAttachment = NSTextAttachment()
         copiedAttachment.fileWrapper = attachment.fileWrapper
+        copiedAttachment.contents = attachment.contents
+        copiedAttachment.fileType = attachment.fileType
         copiedAttachment.image = attachment.image
         copiedAttachment.bounds = attachment.bounds
         return copiedAttachment

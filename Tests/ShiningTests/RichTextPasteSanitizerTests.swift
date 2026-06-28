@@ -132,6 +132,21 @@ final class RichTextPasteSanitizerTests: XCTestCase {
         assertUsesDefaultTextAttributes(document)
     }
 
+    func testAttributedStringPreservesImageAttachmentClipboardData() throws {
+        let pngData = makePNGData()
+        let attachment = NSTextAttachment(
+            data: pngData,
+            ofType: NSPasteboard.PasteboardType.png.rawValue
+        )
+        let source = NSAttributedString(attachment: attachment)
+
+        let document = RichTextPasteSanitizer.sanitizedAttributedString(source)
+        let copiedAttachment = try XCTUnwrap(imageAttachment(in: document))
+
+        XCTAssertEqual(copiedAttachment.contents, pngData)
+        XCTAssertEqual(copiedAttachment.fileType, NSPasteboard.PasteboardType.png.rawValue)
+    }
+
     func testTrimmedAttributedStringPreservesAttachment() {
         let source = NSMutableAttributedString(string: " \n")
         source.append(makeImageAttributedString())
@@ -207,6 +222,10 @@ private func makeImageAttributedString() -> NSAttributedString {
     let attachment = NSTextAttachment(data: makePNGData(), ofType: "public.png")
     attachment.bounds = NSRect(x: 0, y: 0, width: 8, height: 8)
     return NSAttributedString(attachment: attachment)
+}
+
+private func imageAttachment(in document: NSAttributedString, at location: Int = 0) -> NSTextAttachment? {
+    document.attribute(.attachment, at: location, effectiveRange: nil) as? NSTextAttachment
 }
 
 private func makePNGData() -> Data {

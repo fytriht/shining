@@ -110,6 +110,28 @@ final class RichTextEditorUndoTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testCopyingSelectedImageWritesImagePasteboardType() throws {
+        let pngData = makePNGData()
+        let attachment = NSTextAttachment(
+            data: pngData,
+            ofType: NSPasteboard.PasteboardType.png.rawValue
+        )
+        attachment.bounds = NSRect(x: 0, y: 0, width: 8, height: 8)
+        let fixture = makeEditorFixture(document: NSAttributedString(attachment: attachment))
+        let pasteboard = NSPasteboard.general
+        let snapshot = PasteboardSnapshot(pasteboard: pasteboard)
+        defer { snapshot.restore(to: pasteboard) }
+
+        pasteboard.clearContents()
+        fixture.textView.setSelectedRange(NSRange(location: 0, length: 1))
+        fixture.textView.copy(nil)
+
+        let copiedPNGData = try XCTUnwrap(pasteboard.data(forType: .png))
+        XCTAssertNotNil(NSImage(data: copiedPNGData))
+        XCTAssertNil(pasteboard.string(forType: .string))
+    }
+
     private func makeThreeBlockDocumentString() -> String {
         [
             "2026-06-02 08:42",
@@ -135,6 +157,23 @@ final class RichTextEditorUndoTests: XCTestCase {
             )
         )
         return document
+    }
+
+    private func makePNGData() -> Data {
+        let representation = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: 4,
+            pixelsHigh: 4,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        )
+
+        return representation?.representation(using: .png, properties: [:]) ?? Data()
     }
 
     private func makeDocumentStringAfterDeletingMiddleBlock() -> String {
@@ -244,5 +283,42 @@ final class RichTextEditorUndoTests: XCTestCase {
                 keyCode: 51
             )
         )
+    }
+
+    private typealias StoredPasteboardItem = [(type: NSPasteboard.PasteboardType, data: Data)]
+
+    private struct PasteboardSnapshot {
+        let items: [StoredPasteboardItem]
+
+        init(pasteboard: NSPasteboard) {
+            self.items = pasteboard.pasteboardItems?.map { item in
+                item.types.compactMap { type in
+                    guard let data = item.data(forType: type) else {
+                        return nil
+                    }
+                    return (type: type, data: data)
+                }
+            } ?? []
+        }
+
+        func restore(to pasteboard: NSPasteboard) {
+            pasteboard.clearContents()
+
+            let restoredItems = items.compactMap { storedItem -> NSPasteboardItem? in
+                guard !storedItem.isEmpty else {
+                    return nil
+                }
+
+                let item = NSPasteboardItem()
+                for representation in storedItem {
+                    item.setData(representation.data, forType: representation.type)
+                }
+                return item
+            }
+
+            if !restoredItems.isEmpty {
+                pasteboard.writeObjects(restoredItems)
+            }
+        }
     }
 }
