@@ -15,6 +15,24 @@ public enum RichTextDocument {
         NSAttributedString(attributedString: document)
     }
 
+    public static func normalizingTimestampLineAttributes(
+        in document: NSAttributedString
+    ) -> NSAttributedString {
+        let timestampLines = findTimestampLines(in: document)
+        guard !timestampLines.isEmpty else {
+            return document
+        }
+
+        let result = NSMutableAttributedString(attributedString: document)
+        for timestampLine in timestampLines {
+            result.setAttributes(
+                RichTextFormatting.timestampAttributes,
+                range: timestampLine.lineRange
+            )
+        }
+        return result
+    }
+
     public static func timestampBlockCount(in document: NSAttributedString) -> Int {
         findTimestampLines(in: document).count
     }
@@ -113,7 +131,7 @@ public enum RichTextDocument {
         }
 
         return TimestampBlockMoveResult(
-            document: result,
+            document: normalizingTimestampLineAttributes(in: result),
             movedBlockRange: movedBlockRange
         )
     }
@@ -310,7 +328,7 @@ public enum RichTextDocument {
             appendSection(block, to: result)
         }
 
-        return result
+        return normalizingTimestampLineAttributes(in: result)
     }
 
     public static func hasMeaningfulContent(_ document: NSAttributedString) -> Bool {
@@ -353,10 +371,11 @@ public enum RichTextDocument {
 
         do {
             let wrapper = try FileWrapper(url: fileURL, options: [])
-            return NSAttributedString(
+            let document = NSAttributedString(
                 rtfdFileWrapper: wrapper,
                 documentAttributes: nil
             ) ?? empty()
+            return normalizingTimestampLineAttributes(in: document)
         } catch {
             assertionFailure("Failed to load RTFD document: \(error)")
             return empty()
@@ -733,7 +752,10 @@ public enum IdeaTimestampInserter {
             result.append(RichTextDocument.copy(existing))
         }
 
-        return Insertion(document: result, cursorRange: cursorRange)
+        return Insertion(
+            document: RichTextDocument.normalizingTimestampLineAttributes(in: result),
+            cursorRange: cursorRange
+        )
     }
 
     private static func sanitizedSelectedContent(

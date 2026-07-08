@@ -397,6 +397,34 @@ final class IdeaStoreTests: XCTestCase {
         XCTAssertEqual(cursorRange.length, 0)
     }
 
+    func testTimestampInsertNormalizesExistingTimestampLineAttributes() throws {
+        let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let existingDocument = makeDocumentWithLargeTimestampLine(
+            timestamp: "2026-06-02 08:39",
+            body: "older idea"
+        )
+
+        let store = IdeaStore(fileURL: fileURL)
+        store.replaceDocument(existingDocument)
+
+        _ = store.insertTimestamp(
+            date: makeLocalDate(year: 2026, month: 6, day: 2, hour: 8, minute: 40)
+        )
+
+        let oldTimestampLocation = (store.document.string as NSString)
+            .range(of: "2026-06-02 08:39")
+            .location
+        try assertUsesTimestampLineAttributes(
+            store.document,
+            lineStartingAt: 0
+        )
+        try assertUsesTimestampLineAttributes(
+            store.document,
+            lineStartingAt: oldTimestampLocation
+        )
+    }
+
     func testSavedTimestampBlockCountUpdatesOnlyAfterSave() throws {
         let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -443,6 +471,32 @@ final class IdeaStoreTests: XCTestCase {
         let reloaded = IdeaStore(fileURL: fileURL)
 
         XCTAssertEqual(reloaded.savedTimestampBlockCount, 2)
+    }
+
+    func testLoadingExistingFileNormalizesTimestampLineAttributes() throws {
+        let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let document = makeDocumentWithLargeTimestampLine(
+            timestamp: "2026-06-02 08:40",
+            body: "older idea"
+        )
+
+        try RichTextDocument.save(document, to: fileURL)
+
+        let store = IdeaStore(fileURL: fileURL)
+
+        XCTAssertEqual(store.document.string, "2026-06-02 08:40\nolder idea")
+        try assertUsesTimestampLineAttributes(
+            store.document,
+            lineStartingAt: 0
+        )
+        try assertUsesBodyAttributes(
+            store.document,
+            in: NSRange(
+                location: "2026-06-02 08:40\n".utf16.count,
+                length: "older idea".utf16.count
+            )
+        )
     }
 
     func testHashPrefixedTimestampFormatIsNotCountedOrCleanedAsTimestampBlock() throws {
@@ -1134,6 +1188,26 @@ final class IdeaStoreTests: XCTestCase {
         XCTAssertEqual(reloaded.document.string, "2026-06-02 08:40\nidea")
     }
 
+    func testCleanUpNormalizesTimestampLineAttributes() throws {
+        let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = IdeaStore(fileURL: fileURL)
+        store.replaceDocument(
+            makeDocumentWithLargeTimestampLine(
+                timestamp: "2026-06-02 08:40",
+                body: "idea"
+            )
+        )
+
+        XCTAssertTrue(store.cleanUpDocument(saveImmediately: true))
+        XCTAssertEqual(store.document.string, "2026-06-02 08:40\nidea")
+        try assertUsesTimestampLineAttributes(
+            store.document,
+            lineStartingAt: 0
+        )
+    }
+
     func testStorePersistsRTFDText() throws {
         let (directory, fileURL) = makeTemporaryFileURL(name: "ideas.rtfd")
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -1204,6 +1278,27 @@ private func makeUnorderedListAttributedString(_ string: String) -> NSAttributed
             .paragraphStyle: paragraphStyle
         ]
     )
+}
+
+private func makeDocumentWithLargeTimestampLine(
+    timestamp: String,
+    body: String
+) -> NSAttributedString {
+    let document = NSMutableAttributedString(
+        string: "\(timestamp)\n",
+        attributes: [
+            .font: NSFont.boldSystemFont(ofSize: 24),
+            .foregroundColor: NSColor.systemRed,
+            .paragraphStyle: RichTextFormatting.bodyParagraphStyle
+        ]
+    )
+    document.append(
+        NSAttributedString(
+            string: body,
+            attributes: RichTextFormatting.bodyAttributes
+        )
+    )
+    return document
 }
 
 private func makePNGData() -> Data {
@@ -1303,6 +1398,49 @@ private func assertUsesTimestampAttributes(
         file: file,
         line: line
     )
+}
+
+private func assertUsesTimestampLineAttributes(
+    _ document: NSAttributedString,
+    lineStartingAt location: Int,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) throws {
+    let string = document.string as NSString
+    var lineStart = 0
+    var lineEnd = 0
+    var contentsEnd = 0
+    string.getLineStart(
+        &lineStart,
+        end: &lineEnd,
+        contentsEnd: &contentsEnd,
+        for: NSRange(location: location, length: 0)
+    )
+
+    XCTAssertEqual(lineStart, location, file: file, line: line)
+    XCTAssertGreaterThan(lineEnd, lineStart, file: file, line: line)
+
+    try assertUsesTimestampAttributes(
+        document,
+        at: lineStart,
+        file: file,
+        line: line
+    )
+    try assertUsesTimestampAttributes(
+        document,
+        at: contentsEnd - 1,
+        file: file,
+        line: line
+    )
+
+    if contentsEnd < lineEnd {
+        try assertUsesTimestampAttributes(
+            document,
+            at: contentsEnd,
+            file: file,
+            line: line
+        )
+    }
 }
 
 private func assertUsesBodyAttributes(
